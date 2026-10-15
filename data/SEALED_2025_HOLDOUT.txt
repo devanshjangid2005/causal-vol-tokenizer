@@ -1,0 +1,4 @@
+=== 2025 HOLDOUT DATASET SEAL ===
+Status: STRICTLY SEALED
+Reason: Prevent look-ahead leakage and post-hoc hyperparameter tuning
+Unsealing Date: November 14, 2026 (Code Freeze)

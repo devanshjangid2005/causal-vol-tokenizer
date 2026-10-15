@@ -1,0 +1,15 @@
+{
+  "n_steps": 20000,
+  "horizon": 12,
+  "oracle_floor_qlike": 0.1509631985946354,
+  "oracle_ci_95": [
+    0.13643469347016954,
+    0.16351582941370668
+  ],
+  "garch_qlike": 0.1510985625126698,
+  "har_qlike": 0.348873281112749,
+  "positive_control_gross_leak_qlike": 0.00504951950454462,
+  "gross_leak_breaks_oracle": true,
+  "dm_stat_gross_vs_oracle": 23.24261934828336,
+  "dm_pval_gross_vs_oracle": 0.0
+}

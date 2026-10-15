@@ -1,0 +1,174 @@
+{
+  "har_rv_qlike": 0.5427871581899717,
+  "reference_qlike": 0.6382622433157262,
+  "channel_results": {
+    "reference": {
+      "name": "Causal Reference (Leak-Free)",
+      "QLIKE": 0.6382622433157262,
+      "QLIKE_95_CI": [
+        0.5177528170038049,
+        0.8015090023609786
+      ],
+      "RMSE": 0.0001006431199240453,
+      "MAE": 3.942051163326923e-05,
+      "inflation_pct": 0.0,
+      "dm_vs_ref": {
+        "stat": 0.0,
+        "p_value": 1.0
+      },
+      "tost": {
+        "is_equivalent": true
+      }
+    },
+    "channel_1_norm_leak": {
+      "name": "Channel 1: Per-Window Norm Leak",
+      "QLIKE": 0.5930356555406077,
+      "QLIKE_95_CI": [
+        0.5246008947109378,
+        0.6496564044813052
+      ],
+      "RMSE": 0.00010021610326328225,
+      "MAE": 4.106548299757069e-05,
+      "inflation_pct": 7.08589427758874,
+      "dm_vs_ref": {
+        "stat": 0.8136090310363142,
+        "p_value": 0.4158689625859373,
+        "holm_adj_p": 1.0,
+        "is_significant_holm": false
+      },
+      "tost": {
+        "mean_diff": -0.04522658777511854,
+        "margin": 0.03,
+        "p_lower": 0.6079271396183465,
+        "p_upper": 0.08798029312218542,
+        "p_tost": 0.6079271396183465,
+        "is_equivalent": false
+      }
+    },
+    "channel_2_merge_leak": {
+      "name": "Channel 2: Merge Table Leak",
+      "QLIKE": 0.638401649348044,
+      "QLIKE_95_CI": [
+        0.517058426364536,
+        0.814139333411987
+      ],
+      "RMSE": 9.922521416762737e-05,
+      "MAE": 3.9133684071964106e-05,
+      "inflation_pct": -0.02184149756275162,
+      "dm_vs_ref": {
+        "stat": -0.009314577010824266,
+        "p_value": 0.9925681502790222,
+        "holm_adj_p": 1.0,
+        "is_significant_holm": false
+      },
+      "tost": {
+        "mean_diff": 0.00013940603231772902,
+        "margin": 0.03,
+        "p_lower": 0.022015286452581773,
+        "p_upper": 0.023012144084079037,
+        "p_tost": 0.023012144084079037,
+        "is_equivalent": true
+      }
+    },
+    "channel_3_decode_leak": {
+      "name": "Channel 3: Decoding Table Leak",
+      "QLIKE": 0.6382622433157262,
+      "QLIKE_95_CI": [
+        0.5177528170038049,
+        0.8015090023609786
+      ],
+      "RMSE": 0.0001006431199240453,
+      "MAE": 3.942051163326923e-05,
+      "inflation_pct": 0.0,
+      "dm_vs_ref": {
+        "stat": 0.0,
+        "p_value": 1.0,
+        "holm_adj_p": 1.0,
+        "is_significant_holm": false
+      },
+      "tost": {
+        "mean_diff": 0.0,
+        "margin": 0.03,
+        "p_lower": 0.0,
+        "p_upper": 0.0,
+        "p_tost": 0.0,
+        "is_equivalent": true
+      }
+    },
+    "channel_4_boundary_leak": {
+      "name": "Channel 4: Token Boundary Leak",
+      "QLIKE": 0.5325976820127585,
+      "QLIKE_95_CI": [
+        0.45807094820528144,
+        0.6358308608401426
+      ],
+      "RMSE": 0.00011302904600257449,
+      "MAE": 5.45154259938013e-05,
+      "inflation_pct": 16.555038686613827,
+      "dm_vs_ref": {
+        "stat": 2.8573332305576487,
+        "p_value": 0.004272170670343467,
+        "holm_adj_p": 0.017088682681373868,
+        "is_significant_holm": true
+      },
+      "tost": {
+        "mean_diff": -0.10566456130296771,
+        "margin": 0.03,
+        "p_lower": 0.979626084862048,
+        "p_upper": 0.00012195085589190928,
+        "p_tost": 0.979626084862048,
+        "is_equivalent": false
+      }
+    },
+    "channel_5_fft_leak": {
+      "name": "Channel 5: Non-Causal FFT Leak",
+      "QLIKE": 0.6376332877726804,
+      "QLIKE_95_CI": [
+        0.5173673130754718,
+        0.8008244731594808
+      ],
+      "RMSE": 0.00010062281851143894,
+      "MAE": 3.9422391424532824e-05,
+      "inflation_pct": 0.0985418688999202,
+      "dm_vs_ref": {
+        "stat": 3.0161445854482034,
+        "p_value": 0.0025601115223670146,
+        "holm_adj_p": 0.012800557611835073,
+        "is_significant_holm": true
+      },
+      "tost": {
+        "mean_diff": -0.0006289555430458544,
+        "margin": 0.03,
+        "p_lower": 0.0,
+        "p_upper": 0.0,
+        "p_tost": 0.0,
+        "is_equivalent": true
+      }
+    },
+    "positive_control": {
+      "name": "Positive Control (Gross Leak)",
+      "QLIKE": 0.1963084874182955,
+      "QLIKE_95_CI": [
+        0.18013063585434652,
+        0.2100656583030247
+      ],
+      "RMSE": 7.409937674090553e-05,
+      "MAE": 2.808794185295265e-05,
+      "inflation_pct": 69.24328683481461,
+      "dm_vs_ref": {
+        "stat": 6.060686803461897,
+        "p_value": 1.3554153355244125e-09,
+        "holm_adj_p": 8.132492013146475e-09,
+        "is_significant_holm": true
+      },
+      "tost": {
+        "mean_diff": -0.44195375589743063,
+        "margin": 0.03,
+        "p_lower": 0.999999991944169,
+        "p_upper": 4.8328681346857223e-11,
+        "p_tost": 0.999999991944169,
+        "is_equivalent": false
+      }
+    }
+  }
+}
