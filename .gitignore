@@ -22,9 +22,13 @@ data/btcusdt_5m_sample.csv
 # Keep Holdout Seal and specifications
 !data/SEALED_2025_HOLDOUT.txt
 
-# OS & IDE
+# OS, IDE & Temporary Lock Files
+~$*
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-~$*
+
+# System / Agent artifacts
+.agents/
+skills-lock.json
