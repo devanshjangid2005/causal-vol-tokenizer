@@ -5,7 +5,8 @@
 > motif tokenizer and measures how much each one inflates walk-forward realized
 > volatility forecasts.
 
-**Status (15 Oct 2026):** the pipeline was corrected after an audit; see [`FIXES.md`](FIXES.md).
+**Status (17 Nov 2026):** the pipeline was corrected after an audit (see [`FIXES.md`](FIXES.md)), and
+the whole study now runs from one command (`experiments/run_all.py`) or one Colab notebook.
 The earlier headline numbers for Channel 4 (+16.6%), GARCH vs HAR (−21.7%) and the
 84% boundary-mismatch rate came from bugs and have been withdrawn. The token-level
 audit and the baselines below were re-run on Fold 1 after the fixes; the per-channel
@@ -79,38 +80,59 @@ only 1.40 bars per token (128 merges: 1.54).
 HAR-RV QLIKE 0.516 [0.469, 0.575]; GARCH(1,1) QLIKE 0.483 [0.424, 0.556];
 GARCH is better (DM p = 0.005).
 
-**Per-channel GPT audit:** pending re-run (`run_leak_experiments.py`).
+**Per-channel GPT audit (all folds) and 2025 holdout:** produced by `experiments/run_all.py`; see
+`results/inflation_table_h12.md` once it has run.
 
 ## Repository structure
 
 ```text
-data/            download_binance.py, preprocess.py (EWMA, targets), folds.py (folds, origins)
+data/            download_binance.py, preprocess.py (EWMA, targets), folds.py (folds, holdout, origins)
 simulation/      garch_simulator.py (GARCH DGP + analytic oracle)
 tokenization/    bpe_tokenizer.py, causal_gate.py, leak_tokenizer.py (all arms), causality_tests.py
 models/          gpt_model.py (GPT + generative RV), baselines.py (HAR-RV, GARCH)
 evaluation/      metrics.py (QLIKE), hypothesis_tests.py (bootstrap, DM, GW, TOST, Holm)
-experiments/     run_boundary_experiment.py, run_baselines.py, run_leak_experiments.py, run_oracle_experiment.py
+experiments/     run_all.py (whole study, resumable), run_leak_experiments.py, run_baselines.py,
+                 run_boundary_experiment.py, run_oracle_experiment.py, aggregate_folds.py, run_holdout.py
+notebooks/       run_on_colab.ipynb (one-click GPU run of everything)
 presentation/    generate_figures.py (old slide scripts are disabled: their numbers were pre-fix)
 ```
 
 ## Reproduce
 
+**Easiest:** open `notebooks/run_on_colab.ipynb` in Colab with a T4 GPU and choose *Run all*.
+
+**Locally:**
+
 ```bash
 pip install torch numpy pandas scipy arch matplotlib requests pyarrow
-# monthly CSVs in data/raw are reused; missing months are downloaded from data.binance.vision
-python experiments/run_boundary_experiment.py --fold 1
-python experiments/run_baselines.py --fold 1
-python experiments/run_leak_experiments.py --fold 1 --seeds 0            # add --seeds 0 1 2 for the final run
-python experiments/run_leak_experiments.py --fold 1 --horizon 288        # next-day RV
-python experiments/run_oracle_experiment.py --seeds 0                    # negative control
-python presentation/generate_figures.py
+python data/download_binance.py 2021 1 2025 12     # caches monthly CSVs in data/raw (~1 min)
+python experiments/run_all.py                      # all folds, seeds, next-day, negative control, tables, figures
+python experiments/run_all.py --holdout            # once, after reviewing the fold results
 ```
 
-`run_leak_experiments.py --help` lists options (`--arms`, `--epochs`, `--no-generative`,
-`--n-samples`, `--device`). On CPU one seed of all arms takes roughly 1–2 hours.
+`run_all.py` skips any step whose output already exists, so it can be re-run after an interruption.
+Its steps:
+
+1. Token causality audit (Fold 1).
+2. HAR-RV and GARCH(1,1) baselines (Folds 1–6).
+3. GPT leak audit, Fold 1, seeds 0–2 (next-hour RV).
+4. GPT leak audit, Folds 2–6, seed 0.
+5. Negative control on simulated GARCH.
+6. Next-day RV (H = 288) on Fold 1, direct head only. The generative head would need 288 sampled steps per forecast.
+7. `aggregate_folds.py`: the cross-fold inflation table in `results/inflation_table_h12.md` and `.json`.
+8. Figures.
+
+Each leak-audit run also saves per-origin forecasts to `results/losses/*.npz`, so every table can
+be recomputed without retraining.
 
 ## Holdout
 
-The 2025 data is not part of any fold and is not downloaded by these scripts. It will be
-scored once after the code freeze (14 Nov 2026). (The earlier "cryptographically sealed"
-wording was inaccurate: `data/SEALED_2025_HOLDOUT.txt` is a written commitment, not a hash.)
+The 2025 data is scored once, by `experiments/run_holdout.py`, which trains on 2021–2024 and tests on 2025:
+
+* Running it writes `results/HOLDOUT_SCORED.json` with the time, the git commit and the settings.
+* A second run refuses to score again unless `--i-know-this-rescores` is passed, and that re-score is
+  recorded in the output.
+* `--dry-run` exercises the same code on the Fold 6 split without loading 2025.
+
+(The earlier "cryptographically sealed" wording was inaccurate: `data/SEALED_2025_HOLDOUT.txt` is a
+written commitment, not a hash.)

@@ -42,9 +42,15 @@ def download_month(year: int, month: int, save_dir: str = "data/raw") -> Optiona
         return df
 
     print(f"Downloading {filename} from {url}...")
-    resp = requests.get(url, timeout=30)
-    if resp.status_code != 200:
-        print(f"Warning: Failed to fetch {url} (HTTP {resp.status_code})")
+    resp = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, timeout=60)
+            break
+        except requests.RequestException as e:
+            print(f"  attempt {attempt + 1} failed: {e}")
+    if resp is None or resp.status_code != 200:
+        print(f"Warning: Failed to fetch {url} (HTTP {getattr(resp, 'status_code', 'no response')})")
         return None
         
     with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
@@ -82,9 +88,10 @@ def download_range(start_year: int, start_month: int, end_year: int, end_month: 
         raise RuntimeError("No data was downloaded successfully.")
         
     combined = pd.concat(frames, ignore_index=True)
-    # Ensure open_time is integer ms
-    combined["open_time"] = pd.to_numeric(combined["open_time"])
-    combined["open_time"] = pd.to_datetime(combined["open_time"], unit="ms")
+    # Binance spot archives use milliseconds up to 2024 and MICROseconds from 2025-01-01.
+    t = pd.to_numeric(combined["open_time"]).astype("int64")
+    t = t.where(t < 10**14, t // 1000)
+    combined["open_time"] = pd.to_datetime(t, unit="ms")
     for col in ["open", "high", "low", "close", "volume"]:
         combined[col] = pd.to_numeric(combined[col], errors="coerce")
         
@@ -93,6 +100,8 @@ def download_range(start_year: int, start_month: int, end_year: int, end_month: 
     return combined
 
 if __name__ == "__main__":
-    df = download_range(2022, 1, 2022, 3)
+    # python data/download_binance.py 2021 1 2025 12   -> caches every month in data/raw
+    a = [int(x) for x in sys.argv[1:5]] if len(sys.argv) >= 5 else [2021, 1, 2025, 12]
+    df = download_range(*a)
     print(f"Downloaded range: {df.shape}")
 

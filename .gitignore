@@ -36,3 +36,6 @@ skills-lock.json
 # Archive and patch bundles
 *.zip
 *.patch
+
+# Run logs (re-created by experiments/run_all.py)
+results/logs/

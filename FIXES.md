@@ -134,3 +134,33 @@ Files: `tokenization/causal_gate.py`, `tokenization/bpe_tokenizer.py`,
 * Only Fold 1 has been re-run.
 * The proposal cites Zhang et al. for "BPE is not incremental", but that paper defines the
   incremental property and never discusses BPE. Phrase it as applying their definition.
+
+## 17 Nov 2026: full study and holdout
+
+* **2025 timestamps.** From 2025-01-01 Binance archives use microsecond timestamps, so
+  `download_binance.py` now detects microseconds and converts them. Without this the 2025
+  holdout dates would have been wrong. Downloads also retry on failure.
+* **Per-origin forecasts.** `run_leak_experiments.py` saves every arm's forecasts, the
+  baselines and the targets to `results/losses/fold_<k>_h<H>.npz`, so tables can be rebuilt
+  and folds pooled without retraining.
+* **`experiments/aggregate_folds.py`** builds the cross-fold inflation table. The six
+  disjoint test periods are pooled in time order. For each leak versus its matched control
+  it reports:
+  - inflation;
+  - Diebold–Mariano with Holm correction;
+  - Giacomini–White;
+  - TOST at ±5%;
+  - how many folds agree in sign and how many are significant.
+
+  It also covers partial-token bias, the reference versus HAR-RV and GARCH, and seed
+  robustness on Fold 1.
+* **`experiments/run_holdout.py`** scores 2025 once: it trains on 2021–2024 and writes a lock
+  file recording the time and git commit. It refuses to re-score silently, and `--dry-run`
+  tests the same code path on Fold 6 without loading 2025.
+* **`experiments/run_all.py`** runs the whole study in order and resumes after an
+  interruption. **`notebooks/run_on_colab.ipynb`** runs it on a free GPU.
+* **Figures.** A cross-fold inflation figure (pooled bars, single-fold dots, with the
+  positive control on its own scale) and a holdout figure.
+* **Scope.** Next-day RV (H = 288) runs on Fold 1 with the direct head only, because the
+  generative head would need 288 sampled steps per forecast. Folds 2–6 use one seed;
+  Fold 1 uses three.

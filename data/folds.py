@@ -36,10 +36,10 @@ FOLDS_SPEC = [
     {"fold": 6, "name": "Fold 6 (2021-2023 -> 2024)", "train_start": (2021, 1), "train_end": (2023, 12), "test_start": (2024, 1), "test_end": (2024, 12)},
 ]
 
-SEALED_HOLDOUT_SPEC = {
-    "year": 2025,
-    "status": "Not downloaded or read by any script until the final evaluation run.",
-}
+# Final, score-once evaluation: train on every fold year, test on 2025.
+HOLDOUT_SPEC = {"fold": "holdout", "name": "Holdout (2021-2024 -> 2025)", "train_start": (2021, 1), "train_end": (2024, 12),
+                "test_start": (2025, 1), "test_end": (2025, 12)}
+SEALED_HOLDOUT_SPEC = HOLDOUT_SPEC  # backward-compatible name
 
 
 def _synthetic_fold(n_train: int, n_test: int, seed: int = 42) -> Tuple[pd.DataFrame, int, dict]:
@@ -68,10 +68,19 @@ def load_fold(fold_idx: int = 1, synthetic: bool = False, save_dir: str = "data/
     if synthetic:
         return _synthetic_fold(n_train_synth, n_test_synth, seed=seed)
 
+    spec = FOLDS_SPEC[fold_idx - 1]
+    return load_spec(spec, f"fold_{fold_idx}_full.parquet", save_dir)
+
+
+def load_holdout(save_dir: str = "data/processed"):
+    """(df, split) for the 2025 holdout. Only experiments/run_holdout.py should call this."""
+    return load_spec(HOLDOUT_SPEC, "holdout_full.parquet", save_dir)
+
+
+def load_spec(spec: dict, cache_name: str, save_dir: str = "data/processed"):
     from data.download_binance import download_range
     os.makedirs(save_dir, exist_ok=True)
-    spec = FOLDS_SPEC[fold_idx - 1]
-    cache = os.path.join(save_dir, f"fold_{fold_idx}_full.parquet")
+    cache = os.path.join(save_dir, cache_name)
     df = None
     if os.path.exists(cache):
         try:

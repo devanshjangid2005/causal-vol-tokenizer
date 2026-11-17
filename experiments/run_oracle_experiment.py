@@ -30,6 +30,8 @@ from evaluation.hypothesis_tests import diebold_mariano_test
 def main():
     args = parse_args()
     args.fold = "synthetic_garch"
+    if args.losses_out is None and not (args.max_train or args.max_test):
+        args.losses_out = f"results/losses/negative_control_h{args.horizon}.npz"
     df, split, params = load_fold(synthetic=True)
     oracle = np.full(len(df), np.nan)
     ok = np.isfinite(df["true_sigma_sq"].values)

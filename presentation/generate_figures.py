@@ -174,8 +174,12 @@ def plot_oracle_floor_figure(save_path: str = "results/figures/negative_control_
 
 
 def plot_leakage_inflation_figure(save_path: str = "results/figures/leakage_inflation_comparison.png"):
-    """Inflation of each leak arm relative to its matched control, with Holm significance."""
-    data = _load("results/leakage_inflation_table.json")
+    """Inflation of each leak arm relative to its matched control, with Holm significance (Fold 1)."""
+    plot_leakage_inflation_figure_from("results/leakage_inflation_table.json", save_path)
+
+
+def plot_leakage_inflation_figure_from(json_path: str, save_path: str):
+    data = _load(json_path)
     if data is None or "heads" not in data:
         return
     heads = [h for h in ("direct", "generative") if h in data["heads"]]
@@ -186,15 +190,83 @@ def plot_leakage_inflation_figure(save_path: str = "results/figures/leakage_infl
         inf = [lt[a]["inflation_pct"] for a in arms]
         sig = [lt[a].get("significant_holm", False) for a in arms]
         bars = ax.bar([a.replace("_", "\n", 1) for a in arms], inf,
-                      color=["#C62828" if s else "#B0BEC5" for s in sig], edgecolor="black", lw=0.8)
+                      color=["#C2410C" if s else "#0F8A7A" for s in sig], edgecolor="white", lw=2)
         _bar_labels(ax, bars, "{:+.1f}%")
         ax.axhline(0, color="black", lw=0.8)
         ax.set_ylabel("QLIKE reduction vs matched control (%)")
-        ax.set_title(f"{head} head (red = significant after Holm)", fontweight="bold", fontsize=11)
+        ax.set_title(f"{head} head (orange = significant after Holm)", fontweight="bold", fontsize=11)
         ax.tick_params(axis="x", labelsize=8)
-    fig.suptitle(f"Fold {data.get('fold')}: look-ahead inflation per channel, seeds {data.get('seeds')}",
+    fig.suptitle(f"{data.get('fold')}: look-ahead inflation per channel, seeds {data.get('seeds')}",
                  fontweight="bold")
     plt.tight_layout()
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {save_path}")
+
+
+SIG, NONSIG, INK = "#C2410C", "#0F8A7A", "#1B2A41"   # validated pair (dataviz validator, light surface)
+SHORT = {"ch1_window_norm_leak": "Ch1 window norm", "ch2_merge_table_leak": "Ch2 merge table",
+         "ch3_decode_table_leak": "Ch3 decode table", "ch4_boundary_leak": "Ch4 boundary",
+         "ch5_noncausal_fft_leak": "Ch5 centered FFT", "positive_control": "Positive control",
+         "partial_token_bias": "Partial-token bias"}
+
+
+def plot_multifold_inflation(horizon: int = 12, save_path: str = None):
+    """Pooled inflation per channel (bars, colored by Holm significance) with each fold as a dot.
+    The positive control is drawn on its own panel because its scale dwarfs the leaks."""
+    data = _load(f"results/inflation_table_h{horizon}.json")
+    if data is None:
+        return
+    save_path = save_path or f"results/figures/inflation_all_folds_h{horizon}.png"
+    heads = list(data["heads"])
+    fig, axes = plt.subplots(len(heads), 2, figsize=(12, 3.8 * len(heads)), squeeze=False,
+                             gridspec_kw={"width_ratios": [5, 1]})
+    for row, head in zip(axes, heads):
+        h, pf = data["heads"][head], data["per_fold"][head]
+        arms = [a for a in h["leak_tests"] if a != "positive_control"]
+        vals = [h["leak_tests"][a]["inflation_pct"] for a in arms]
+        sig = [h["leak_tests"][a].get("significant_holm", False) for a in arms]
+        dots = [[pf[k]["leaks"][a]["inflation_pct"] for k in pf] for a in arms]
+        if h.get("partial_token_bias"):
+            arms.append("partial_token_bias")
+            vals.append(h["partial_token_bias"]["inflation_pct"])
+            sig.append(h["partial_token_bias"]["dm_p"] < 0.05)
+            dots.append([pf[k]["partial_token_bias"]["inflation_pct"] for k in pf if "partial_token_bias" in pf[k]])
+        ax = row[0]
+        x = np.arange(len(arms))
+        ax.bar(x, vals, width=0.55, color=[SIG if s_ else NONSIG for s_ in sig], edgecolor="white", linewidth=2)
+        for i, d in enumerate(dots):
+            ax.scatter(np.full(len(d), i) + np.linspace(-0.12, 0.12, len(d)), d, s=26, color=INK, zorder=3,
+                       edgecolor="white", linewidth=0.8)
+            ax.annotate(f"{vals[i]:+.1f}%", (i, vals[i]), xytext=(0, 4 if vals[i] >= 0 else -12),
+                        textcoords="offset points", ha="center", fontsize=9, color=INK)
+        ax.axhline(0, color=INK, lw=0.8)
+        ax.set_xticks(x)
+        ax.set_xticklabels([SHORT.get(a, a) for a in arms], fontsize=9)
+        ax.set_ylabel("QLIKE reduction vs control (%)")
+        ax.set_title(f"{head.capitalize()} head: bars = pooled over folds {data['folds']}, dots = single folds",
+                     fontsize=11, fontweight="bold", loc="left")
+        ax.grid(axis="y", color="#E5E7EB", lw=0.6)
+        ax.grid(axis="x", visible=False)
+        pc = h["leak_tests"].get("positive_control")
+        ax2 = row[1]
+        if pc:
+            ax2.bar([0], [pc["inflation_pct"]], width=0.55, color=SIG if pc.get("significant_holm") else NONSIG)
+            ax2.annotate(f"{pc['inflation_pct']:+.0f}%", (0, pc["inflation_pct"]), xytext=(0, 4),
+                         textcoords="offset points", ha="center", fontsize=9, color=INK)
+            ax2.set_xticks([0])
+            ax2.set_xticklabels(["Positive\ncontrol"], fontsize=9)
+            ax2.set_ylim(0, max(100, pc["inflation_pct"] * 1.15))
+            ax2.grid(axis="x", visible=False)
+        else:
+            ax2.axis("off")
+    from matplotlib.patches import Patch
+    fig.legend(handles=[Patch(color=SIG, label="Significant (Holm-adjusted DM p < 0.05)"),
+                        Patch(color=NONSIG, label="Not significant"),
+                        plt.Line2D([], [], marker="o", ls="", color=INK, label="Single fold")],
+               loc="upper right", ncol=3, fontsize=9, frameon=False)
+    fig.suptitle(f"Look-ahead inflation per leakage channel, H = {horizon} bars", fontweight="bold", x=0.01, ha="left")
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
     print(f"Saved {save_path}")
@@ -205,4 +277,9 @@ if __name__ == "__main__":
     plot_boundary_mismatch_figure()
     plot_oracle_floor_figure()
     plot_leakage_inflation_figure()
+    for hz in (12, 288):
+        plot_multifold_inflation(hz)
+    if os.path.exists("results/holdout_h12_leak_audit.json"):
+        plot_leakage_inflation_figure_from("results/holdout_h12_leak_audit.json",
+                                           "results/figures/holdout_inflation_h12.png")
 

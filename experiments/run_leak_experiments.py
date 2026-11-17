@@ -66,6 +66,8 @@ def parse_args(argv=None):
     ap.add_argument("--max-train", type=int, default=None, help="smoke tests only: subsample train origins")
     ap.add_argument("--max-test", type=int, default=None, help="smoke tests only: first N test origins")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--losses-out", default=None,
+                    help="npz with per-origin forecasts and targets (default results/losses/fold_<k>_h<H>.npz)")
     return ap.parse_args(argv)
 
 
@@ -209,6 +211,20 @@ def run_audit(df: pd.DataFrame, split: int, args, extra_forecasts: Optional[Dict
         base.update({k: v[test_o] for k, v in extra_forecasts.items()})
     base_losses = {k: qlike_loss(y_te, v) for k, v in base.items()}
 
+    if getattr(args, "losses_out", None):
+        # per-origin forecasts so folds can be pooled later (experiments/aggregate_folds.py)
+        arrays = {"y": y_te, "origin": test_o,
+                  "origin_time": pd.to_datetime(df["open_time"]).values[test_o].astype("datetime64[ns]").astype(np.int64)}
+        for k, v in base.items():
+            arrays[f"base/{k}"] = np.asarray(v, dtype=np.float64)
+        for head, by_arm in preds.items():
+            for a, ps in by_arm.items():
+                for seed, p in zip(args.seeds, ps):
+                    arrays[f"fc/{head}/{a}/seed{seed}"] = np.asarray(p, dtype=np.float64)
+        os.makedirs(os.path.dirname(args.losses_out) or ".", exist_ok=True)
+        np.savez_compressed(args.losses_out, **arrays)
+        print(f"Saved per-origin forecasts to {args.losses_out}")
+
     results = {"fold": getattr(args, "fold", None), "horizon": H, "context": C,
                "n_train_origins": int(len(train_o)), "n_test_origins": int(len(test_o)),
                "seeds": args.seeds, "epochs": args.epochs, "vol_loss": args.vol_loss,
@@ -265,6 +281,9 @@ def print_table(res: dict):
 
 def main():
     args = parse_args()
+    smoke = bool(args.max_train or args.max_test)
+    if args.losses_out is None and not smoke:
+        args.losses_out = f"results/losses/fold_{args.fold}_h{args.horizon}.npz"
     df, split = load_fold(args.fold)
     res = run_audit(df, split, args)
     print_table(res)
