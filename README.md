@@ -104,7 +104,7 @@ presentation/    generate_figures.py (old slide scripts are disabled: their numb
 **Locally:**
 
 ```bash
-pip install torch numpy pandas scipy arch matplotlib requests pyarrow
+pip install torch numpy pandas scipy matplotlib requests pyarrow
 python data/download_binance.py 2021 1 2025 12     # caches monthly CSVs in data/raw (~1 min)
 python experiments/run_all.py                      # all folds, seeds, next-day, negative control, tables, figures
 python experiments/run_all.py --holdout            # once, after reviewing the fold results

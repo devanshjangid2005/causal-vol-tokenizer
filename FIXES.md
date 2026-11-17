@@ -164,3 +164,10 @@ Files: `tokenization/causal_gate.py`, `tokenization/bpe_tokenizer.py`,
 * **Scope.** Next-day RV (H = 288) runs on Fold 1 with the direct head only, because the
   generative head would need 288 sampled steps per forecast. Folds 2–6 use one seed;
   Fold 1 uses three.
+* **GARCH(1,1) estimator.** On Fold 6 (training on 2021–2023), arch's optimizer did not
+  converge at any return scaling and returned α + β = 1.01, which is non-stationary.
+  GARCH is now fitted by Gaussian maximum likelihood with stationarity enforced by
+  construction (α + β ≤ 0.9999). It reproduces arch where arch converges (Fold 1:
+  α 0.1049, β 0.8834; QLIKE 0.4825 unchanged). Fold 6 sits at the persistence cap, which is
+  near-integrated volatility. The fitted parameters, a convergence flag and a cap flag are
+  saved in `results/fold_<k>_baselines.json`. `arch` is no longer a dependency.

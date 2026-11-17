@@ -7,8 +7,8 @@ RV_H[t] = sum_{k=0}^{H-1} r_{t+k}^2   (see data/preprocess.py).
 
 1. HAR-RV (Corsi 2009) on 5-minute bars: lags of 1 hour (12), 1 day (288) and
    1 week (2016 = 7 x 288, crypto trades 24/7).
-2. GARCH(1,1) (Bollerslev 1986) fitted with `arch` on the train period, then
-   filtered causally over the whole series with the fitted parameters.
+2. GARCH(1,1) (Bollerslev 1986) fitted by constrained maximum likelihood on the train
+   period, then filtered causally over the whole series with the fitted parameters.
 """
 
 import sys
@@ -52,25 +52,54 @@ class HARRVModel:
 
 
 class GARCH11Model:
-    def __init__(self):
+    """
+    Gaussian GARCH(1,1) by maximum likelihood with stationarity enforced by construction:
+    alpha = p * s, beta = p * (1 - s), p = 0.9999 * sigmoid(.), s = sigmoid(.), omega = exp(.).
+    (arch's optimizer failed to converge on Fold 6 and returned alpha + beta = 1.01; this
+    estimator matches arch where arch converges, e.g. Fold 1: alpha 0.1049, beta 0.8834.)
+    The variance recursion is evaluated with scipy.signal.lfilter, so a fit takes ~1 s.
+    """
+    MAX_PERSISTENCE = 0.9999
+
+    def __init__(self, scale: float = 1000.0):
+        self.scale = scale
         self.omega, self.alpha, self.beta = 1e-7, 0.05, 0.93
         self.fitted = False
+        self.at_persistence_cap = False
+
+    def _unpack(self, t):
+        p = self.MAX_PERSISTENCE / (1.0 + np.exp(-t[1]))
+        share = 1.0 / (1.0 + np.exp(-t[2]))
+        return np.exp(t[0]), p * share, p * (1.0 - share)
+
+    def _nll(self, t, r2, v0):
+        from scipy.signal import lfilter
+        omega, a, b = self._unpack(t)
+        x = omega + a * np.concatenate([[v0], r2[:-1]])
+        s2, _ = lfilter([1.0], [1.0, -b], x, zi=[b * v0])
+        s2 = np.maximum(s2, 1e-12)
+        return 0.5 * np.sum(np.log(s2) + r2 / s2)
 
     def fit(self, returns_train: np.ndarray):
-        from arch import arch_model
-        try:
-            # 5-minute returns are ~1e-3, so scale by 1000 to put the variance in arch's preferred range
-            res = arch_model(returns_train * 1000.0, vol="Garch", p=1, q=1, mean="Zero", dist="Normal",
-                             rescale=False).fit(disp="off", show_warning=False)
-            if res.convergence_flag != 0:
-                print(f"Warning: GARCH optimizer did not converge (flag {res.convergence_flag})")
-            p = res.params
-            self.omega = float(p["omega"]) / 1e6
-            self.alpha = float(p["alpha[1]"])
-            self.beta = float(p["beta[1]"])
-            self.fitted = True
-        except Exception as e:  # keep defaults but say so
-            print(f"GARCH fit failed ({e}); using default parameters")
+        from scipy.optimize import minimize
+        r2 = (np.asarray(returns_train, dtype=np.float64) * self.scale) ** 2
+        v0 = float(r2.mean())
+        best = None
+        for a, b in [(0.05, 0.93), (0.10, 0.88), (0.15, 0.80), (0.03, 0.96)]:
+            p = (a + b) / self.MAX_PERSISTENCE
+            t0 = np.array([np.log(v0 * (1 - a - b)), np.log(p / (1 - p)), np.log(a / b)])
+            res = minimize(self._nll, t0, args=(r2, v0), method="L-BFGS-B")
+            if best is None or res.fun < best.fun:
+                best = res
+        omega, self.alpha, self.beta = self._unpack(best.x)
+        self.omega = float(omega / self.scale ** 2)
+        self.fitted = bool(best.success)
+        self.alpha, self.beta = float(self.alpha), float(self.beta)
+        self.at_persistence_cap = bool((self.alpha + self.beta) > self.MAX_PERSISTENCE - 1e-4)
+        if not best.success:
+            print(f"Warning: GARCH MLE did not converge ({best.message})")
+        if self.at_persistence_cap:
+            print("Note: GARCH persistence is at the 0.9999 cap (near-integrated volatility in this training window)")
         return self
 
     def filter(self, returns: np.ndarray) -> np.ndarray:

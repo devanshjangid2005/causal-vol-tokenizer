@@ -42,9 +42,11 @@ def main():
     har = HARRVModel().fit(r, tr, args.horizon)
     garch = GARCH11Model().fit(r[:split])
     print(f"GARCH params: omega={garch.omega:.3e} alpha={garch.alpha:.4f} beta={garch.beta:.4f}")
+    garch_params = {"omega": garch.omega, "alpha": garch.alpha, "beta": garch.beta,
+                    "converged": garch.fitted, "at_persistence_cap": garch.at_persistence_cap}
     preds = {"har_rv": har.predict(r, te, args.horizon), "garch_11": garch.predict(r, te, args.horizon)}
 
-    out = {"fold": args.fold, "horizon": args.horizon, "n_test_origins": int(len(te))}
+    out = {"fold": args.fold, "horizon": args.horizon, "n_test_origins": int(len(te)), "garch_params": garch_params}
     losses = {}
     for name, p in preds.items():
         m = compute_all_metrics(y[te], p)
