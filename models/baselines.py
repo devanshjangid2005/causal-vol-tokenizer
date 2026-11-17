@@ -1,8 +1,14 @@
 """
 models/baselines.py
-Econometric Baselines for Volatility Forecasting:
-1. HAR-RV (Heterogeneous Autoregressive model of Realized Volatility - Corsi 2009)
-2. GARCH(1,1) (Bollerslev 1986 via arch library)
+Econometric baselines, scored on exactly the same origins and target as the GPT.
+
+At origin t every model may use returns up to t-1 and forecasts
+RV_H[t] = sum_{k=0}^{H-1} r_{t+k}^2   (see data/preprocess.py).
+
+1. HAR-RV (Corsi 2009) on 5-minute bars: lags of 1 hour (12), 1 day (288) and
+   1 week (2016 = 7 x 288, crypto trades 24/7).
+2. GARCH(1,1) (Bollerslev 1986) fitted with `arch` on the train period, then
+   filtered causally over the whole series with the fitted parameters.
 """
 
 import sys
@@ -10,133 +16,92 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
-import pandas as pd
-from arch import arch_model
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple
+
+
+def _cumsum_sq(returns: np.ndarray) -> np.ndarray:
+    cs = np.zeros(len(returns) + 1)
+    cs[1:] = np.cumsum(returns ** 2)
+    return cs
+
 
 class HARRVModel:
-    """
-    Corsi (2009) HAR-RV model adapted for high-frequency 5-minute returns.
-    Regresses future RV onto short-term (1h = 12 bars), medium-term (1d = 288 bars),
-    and long-term (1w = 1440 or 2016 bars) trailing realized variances.
-    """
-    def __init__(self, lags: Tuple[int, int, int] = (12, 288, 1440)):
-        self.lag_h, self.lag_d, self.lag_w = lags
+    def __init__(self, lags: Tuple[int, int, int] = (12, 288, 2016)):
+        self.lags = lags
         self.max_lag = max(lags)
-        self.weights = None # [intercept, beta_h, beta_d, beta_w]
-        
-    def _create_features(self, returns_sq: np.ndarray, horizon: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        n = len(returns_sq)
-        valid_indices = []
-        X_list = []
-        y_list = []
-        
-        # Precompute cumulative sums for fast rolling sums
-        cumsum = np.zeros(n + 1, dtype=np.float64)
-        cumsum[1:] = np.cumsum(returns_sq)
-        
-        def range_sum(start, end):
-            return cumsum[end] - cumsum[start]
-            
-        start_t = self.max_lag
-        end_t = n - horizon
-        
-        for t in range(start_t, end_t):
-            rv_h = range_sum(t - self.lag_h, t)
-            rv_d = range_sum(t - self.lag_d, t)
-            rv_w = range_sum(t - self.lag_w, t)
-            
-            y = range_sum(t, t + horizon)
-            
-            X_list.append([1.0, rv_h, rv_d, rv_w])
-            y_list.append(y)
-            valid_indices.append(t)
-            
-        return np.array(X_list), np.array(y_list), np.array(valid_indices)
+        self.weights = None
 
-    def fit(self, returns: np.ndarray, horizon: int = 12):
-        returns_sq = returns ** 2
-        X, y, _ = self._create_features(returns_sq, horizon)
-        # OLS with non-negativity regularization or standard pseudoinverse
-        self.weights, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-        # Ensure positive intercept to guarantee positive variance forecasts
-        if self.weights[0] < 1e-8:
-            self.weights[0] = 1e-8
+    def _features(self, cs: np.ndarray, origins: np.ndarray) -> np.ndarray:
+        cols = [np.ones(len(origins))]
+        for lag in self.lags:
+            cols.append(cs[origins] - cs[origins - lag])  # sum of r^2 over [t-lag, t)
+        return np.column_stack(cols)
+
+    def fit(self, returns: np.ndarray, origins: np.ndarray, horizon: int = 12):
+        origins = origins[origins >= self.max_lag]
+        cs = _cumsum_sq(returns)
+        X = self._features(cs, origins)
+        y = cs[origins + horizon] - cs[origins]
+        self.weights, *_ = np.linalg.lstsq(X, y, rcond=None)
         return self
 
-    def predict(self, returns: np.ndarray, horizon: int = 12) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Returns: (predictions, true_targets)
-        """
-        returns_sq = returns ** 2
-        X, y, indices = self._create_features(returns_sq, horizon)
-        preds = np.maximum(X @ self.weights, 1e-8)
-        return preds, y
+    def predict(self, returns: np.ndarray, origins: np.ndarray, horizon: int = 12) -> np.ndarray:
+        assert np.all(origins >= self.max_lag), "HAR needs max_lag bars of history before each origin"
+        cs = _cumsum_sq(returns)
+        return np.maximum(self._features(cs, origins) @ self.weights, 1e-12)
 
 
 class GARCH11Model:
-    """
-    Standard GARCH(1,1) model for returns.
-    """
-    def __init__(self, p: int = 1, q: int = 1):
-        self.p = p
-        self.q = q
-        self.model_res = None
-        self.omega = 1e-5
-        self.alpha = 0.08
-        self.beta = 0.90
-        
-    def fit(self, returns: np.ndarray):
-        # Scale returns by 100 for numerical stability in optimizer
-        scaled_returns = returns * 100.0
+    def __init__(self):
+        self.omega, self.alpha, self.beta = 1e-7, 0.05, 0.93
+        self.fitted = False
+
+    def fit(self, returns_train: np.ndarray):
+        from arch import arch_model
         try:
-            am = arch_model(scaled_returns, vol='Garch', p=self.p, q=self.q, mean='Zero', dist='Normal')
-            self.model_res = am.fit(disp='off', show_warning=False)
-            params = self.model_res.params
-            self.omega = float(params['omega']) / 10000.0
-            self.alpha = float(params['alpha[1]'])
-            self.beta = float(params['beta[1]'])
-        except Exception as e:
-            # Fallback to robust defaults if optimizer fails
-            pass
+            # 5-minute returns are ~1e-3, so scale by 1000 to put the variance in arch's preferred range
+            res = arch_model(returns_train * 1000.0, vol="Garch", p=1, q=1, mean="Zero", dist="Normal",
+                             rescale=False).fit(disp="off", show_warning=False)
+            if res.convergence_flag != 0:
+                print(f"Warning: GARCH optimizer did not converge (flag {res.convergence_flag})")
+            p = res.params
+            self.omega = float(p["omega"]) / 1e6
+            self.alpha = float(p["alpha[1]"])
+            self.beta = float(p["beta[1]"])
+            self.fitted = True
+        except Exception as e:  # keep defaults but say so
+            print(f"GARCH fit failed ({e}); using default parameters")
         return self
 
-    def predict(self, returns: np.ndarray, horizon: int = 12) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Multi-step ahead analytical cumulative variance forecast.
-        """
-        n = len(returns)
-        returns_sq = returns ** 2
-        gamma = self.alpha + self.beta
-        v_inf = self.omega / max(1e-6, 1.0 - gamma) if gamma < 1.0 else 1e-4
-        
-        if abs(gamma - 1.0) < 1e-12:
-            geom_sum = float(horizon)
-        else:
-            geom_sum = (1.0 - gamma ** horizon) / (1.0 - gamma)
-            
-        # Filter variances causally
-        sigma_sq = np.zeros(n, dtype=np.float64)
-        sigma_sq[0] = v_inf
-        for t in range(1, n):
-            sigma_sq[t] = self.omega + self.alpha * returns_sq[t - 1] + self.beta * sigma_sq[t - 1]
-            
-        valid_len = n - horizon
-        preds = np.zeros(valid_len, dtype=np.float64)
-        targets = np.zeros(valid_len, dtype=np.float64)
-        
-        for t in range(valid_len):
-            targets[t] = np.sum(returns_sq[t + 1 : t + 1 + horizon])
-            sigma_next_sq = self.omega + self.alpha * returns_sq[t] + self.beta * sigma_sq[t]
-            preds[t] = max(1e-8, horizon * v_inf + (sigma_next_sq - v_inf) * geom_sum)
-            
-        return preds, targets
+    def filter(self, returns: np.ndarray) -> np.ndarray:
+        """sigma_sq[t] = omega + alpha r_{t-1}^2 + beta sigma_sq[t-1]: uses data up to t-1 only."""
+        g = self.alpha + self.beta
+        v = self.omega / (1.0 - g) if g < 1 else float(np.var(returns))
+        s = np.empty(len(returns))
+        s[0] = v
+        for t in range(1, len(returns)):
+            s[t] = self.omega + self.alpha * returns[t - 1] ** 2 + self.beta * s[t - 1]
+        return s
+
+    def predict(self, returns: np.ndarray, origins: np.ndarray, horizon: int = 12) -> np.ndarray:
+        g = self.alpha + self.beta
+        s = self.filter(returns)
+        if g >= 1.0:
+            return np.maximum(horizon * s[origins], 1e-12)
+        v = self.omega / (1.0 - g)
+        geom = (1.0 - g ** horizon) / (1.0 - g)
+        return np.maximum(horizon * v + (s[origins] - v) * geom, 1e-12)
+
 
 if __name__ == "__main__":
-    from simulation.garch_simulator import GARCHSimulator
-    sim = GARCHSimulator()
-    ret, sig = sim.simulate(n_steps=5000)
-    har = HARRVModel()
-    har.fit(ret[:3000], horizon=12)
-    preds_har, y_har = har.predict(ret[3000:], horizon=12)
-    print("HAR test preds mean:", np.mean(preds_har), "target mean:", np.mean(y_har))
+    from data.folds import load_fold, select_origins
+    from evaluation.metrics import qlike_loss
+    df, split, _ = load_fold(synthetic=True, n_train_synth=30000, n_test_synth=8000)
+    r = df["return"].values
+    tr = select_origins(df, 0, split, 12, 144, min_history=2016)
+    te = select_origins(df, split, len(df), 12, 144, min_history=2016)
+    y = df["rv_target_1h"].values[te]
+    har = HARRVModel().fit(r, tr)
+    g = GARCH11Model().fit(r[:split])
+    print("HAR QLIKE  ", qlike_loss(y, har.predict(r, te)).mean())
+    print("GARCH QLIKE", qlike_loss(y, g.predict(r, te)).mean())

@@ -1,142 +1,121 @@
 """
 models/gpt_model.py
-Lightweight ~1M-Parameter Causal GPT with Conditional Decoding for Realized Volatility Forecasting.
+~0.8M-parameter causal GPT over motif tokens, with two ways to forecast RV:
 
-Architecture:
-- Discrete token embedding + Positional embedding
-- Causal Transformer Decoder (4 layers, d_model=128, nhead=4, dim_feedforward=512)
-- Multi-task Output:
-  1. Next-token prediction head (for generative autoregressive rollout)
-  2. Volatility prediction head (direct projection to normalized realized variance)
+1. Direct head: a regression head on the last hidden state predicts RV / scale^2.
+2. Generative head (Götz-style): sample future tokens autoregressively, expand them to
+   base bins, and decode each bin with the conditional decoding tables
+   E[x_i^2 | bin_i, bin_{i-1}]; RV = scale^2 * mean over samples of the sum over the
+   next H bars. This is the path through which the decoding table (Channel 3) matters.
+
+A dedicated PAD id (never a real token) is used, so padding cannot be confused with
+bin 0 (the most negative return bin), and the LM loss ignores only PAD targets.
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-from typing import Tuple, Optional, List
+from typing import List, Optional, Sequence
+
 
 class TimeSeriesGPT(nn.Module):
-    def __init__(
-        self,
-        vocab_size: int = 150,
-        max_seq_len: int = 256,
-        d_model: int = 128,
-        nhead: int = 4,
-        num_layers: int = 4,
-        dim_feedforward: int = 512,
-        dropout: float = 0.1
-    ):
+    def __init__(self, vocab_size: int, pad_id: int, max_seq_len: int = 192, d_model: int = 128,
+                 nhead: int = 4, num_layers: int = 4, dim_feedforward: int = 512, dropout: float = 0.1):
         super().__init__()
         self.vocab_size = vocab_size
+        self.pad_id = pad_id
         self.max_seq_len = max_seq_len
-        self.d_model = d_model
-        
-        # Embeddings
-        self.tok_emb = nn.Embedding(vocab_size, d_model)
+        self.tok_emb = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.pos_emb = nn.Embedding(max_seq_len, d_model)
         self.drop = nn.Dropout(dropout)
-        
-        # Transformer Decoder Layers
-        decoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True
-        )
-        self.transformer = nn.TransformerEncoder(decoder_layer, num_layers=num_layers)
+        layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout,
+                                           activation="gelu", batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=num_layers, enable_nested_tensor=False)
         self.ln_f = nn.LayerNorm(d_model)
-        
-        # Heads
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
-        # Volatility regression head: predicts normalized RV
-        self.vol_head = nn.Sequential(
-            nn.Linear(d_model, 64),
-            nn.GELU(),
-            nn.Linear(64, 1),
-            nn.Softplus() # guarantees positive volatility forecast
-        )
-        
-        self._init_weights()
-
-    def _init_weights(self):
+        self.vol_head = nn.Sequential(nn.Linear(d_model, 64), nn.GELU(), nn.Linear(64, 1), nn.Softplus())
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def _generate_causal_mask(self, sz: int, device: torch.device) -> torch.Tensor:
-        mask = torch.triu(torch.ones(sz, sz, device=device) * float('-inf'), diagonal=1)
-        return mask
-
-    def forward(self, input_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        input_ids: (batch_size, seq_len)
-        Returns:
-            logits: (batch_size, seq_len, vocab_size)
-            norm_rv_pred: (batch_size, 1) normalized realized variance forecast
-        """
-        b, t = input_ids.size()
-        assert t <= self.max_seq_len, f"Sequence length {t} exceeds max {self.max_seq_len}"
-        
-        pos = torch.arange(0, t, dtype=torch.long, device=input_ids.device).unsqueeze(0)
-        x = self.tok_emb(input_ids) + self.pos_emb(pos)
-        x = self.drop(x)
-        
-        mask = self._generate_causal_mask(t, input_ids.device)
-        h = self.transformer(x, mask=mask, is_causal=True)
+    def forward(self, ids: torch.Tensor):
+        b, t = ids.shape
+        pos = torch.arange(t, device=ids.device).unsqueeze(0)
+        x = self.drop(self.tok_emb(ids) + self.pos_emb(pos))
+        causal = torch.triu(torch.full((t, t), float("-inf"), device=ids.device), diagonal=1)
+        # Sequences are LEFT-padded with a dedicated PAD id (zero embedding). We do not add a
+        # key-padding mask: with left padding it creates all-masked rows (NaN). PAD is a
+        # distinct, information-free token, so attending to it is harmless and identical
+        # across arms; the important fix is that it no longer collides with bin 0.
+        h = self.transformer(x, mask=causal)
         h = self.ln_f(h)
-        
-        logits = self.lm_head(h)
-        # Volatility prediction from final hidden state
-        last_hidden = h[:, -1, :]
-        norm_rv_pred = self.vol_head(last_hidden)
-        
-        return logits, norm_rv_pred
+        return self.lm_head(h), self.vol_head(h[:, -1, :]).squeeze(-1) + 1e-6
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-    @torch.no_grad()
-    def autoregressive_rollout(
-        self,
-        prefix_ids: torch.Tensor,
-        rollout_steps: int = 12,
-        temperature: float = 0.8
-    ) -> torch.Tensor:
-        """
-        Generates next token sequence autoregressively.
-        prefix_ids: shape (1, seq_len)
-        Returns generated tokens: shape (1, rollout_steps)
-        """
-        curr = prefix_ids.clone()
-        generated = []
-        for _ in range(rollout_steps):
-            if curr.size(1) > self.max_seq_len - 1:
-                curr = curr[:, -(self.max_seq_len - 1):]
-            logits, _ = self.forward(curr)
-            next_token_logits = logits[:, -1, :] / max(temperature, 1e-4)
-            probs = F.softmax(next_token_logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
-            generated.append(next_token)
-            curr = torch.cat([curr, next_token], dim=1)
-        return torch.cat(generated, dim=1)
 
-if __name__ == "__main__":
-    model = TimeSeriesGPT(vocab_size=120, max_seq_len=256, d_model=128, num_layers=4)
-    param_count = model.count_parameters()
-    print(f"Model Parameter Count: {param_count:,} (~{param_count / 1e6:.2f}M params)")
-    
-    dummy_input = torch.randint(0, 120, (2, 64))
-    logits, rv_pred = model(dummy_input)
-    print(f"Logits shape: {logits.shape}, RV pred shape: {rv_pred.shape}")
-    
-    rollout = model.autoregressive_rollout(dummy_input[:1, :10], rollout_steps=12)
-    print("Rollout shape:", rollout.shape)
+def pad_left(seqs: Sequence[Sequence[int]], max_len: int, pad_id: int) -> torch.Tensor:
+    out = torch.full((len(seqs), max_len), pad_id, dtype=torch.long)
+    for i, s in enumerate(seqs):
+        s = list(s)[-max_len:]
+        if s:
+            out[i, max_len - len(s):] = torch.tensor(s, dtype=torch.long)
+    return out
 
+
+@torch.no_grad()
+def generative_rv(model: TimeSeriesGPT, seqs: List[List[int]], last_bins: List[int],
+                  known_future: List[List[int]], token_len: np.ndarray, token_bins: List[tuple],
+                  cond_m2: np.ndarray, horizon: int, n_samples: int = 8, temperature: float = 1.0,
+                  batch_size: int = 512, device: str = "cpu", seed: int = 0) -> np.ndarray:
+    """
+    Returns, per sequence, the mean over samples of sum_{k<H} E[x_{t+k}^2 | bins] in
+    normalized units (multiply by scale^2 outside). token_len/token_bins describe the
+    tokenizer whose decoding tables are being used.
+    """
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    model.eval()
+    L = model.max_seq_len
+    out = np.zeros(len(seqs))
+    vocab_ok = torch.zeros(model.vocab_size, dtype=torch.bool)
+    vocab_ok[: len(token_len)] = True
+    vocab_ok[model.pad_id] = False
+    # tokens that cover no bars but are not scale tokens (unused ids) are also blocked
+    rep = [i for i in range(len(seqs)) for _ in range(n_samples)]
+    for b0 in range(0, len(rep), batch_size):
+        idx = rep[b0:b0 + batch_size]
+        ids = pad_left([seqs[i] for i in idx], L, model.pad_id).to(device)
+        acc = np.zeros(len(idx))
+        done = np.zeros(len(idx), dtype=np.int64)
+        prev = np.array([last_bins[i] for i in idx], dtype=np.int64)
+        for j, i in enumerate(idx):  # bars already known inside the input (ch4 leak)
+            for b in known_future[i][:horizon]:
+                acc[j] += cond_m2[b, prev[j]]
+                prev[j] = b
+                done[j] += 1
+        for _ in range(3 * horizon):
+            if (done >= horizon).all():
+                break
+            logits, _ = model(ids)
+            logits = logits[:, -1, :].float().cpu() / max(temperature, 1e-4)
+            logits[:, ~vocab_ok] = float("-inf")
+            nxt = torch.multinomial(F.softmax(logits, dim=-1), 1, generator=g).squeeze(1).numpy()
+            for j, tid in enumerate(nxt):
+                for b in token_bins[tid]:
+                    if done[j] >= horizon:
+                        break
+                    acc[j] += cond_m2[b, prev[j]]
+                    prev[j] = b
+                    done[j] += 1
+            ids = torch.cat([ids[:, 1:], torch.as_tensor(nxt, device=device).unsqueeze(1)], dim=1)
+        # sequences that ran out of steps: scale up their partial sum
+        acc = np.where(done > 0, acc * horizon / np.maximum(done, 1), np.nan)
+        for j, i in enumerate(idx):
+            out[i] += acc[j] / n_samples
+    return out

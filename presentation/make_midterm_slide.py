@@ -20,6 +20,10 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
 def create_midterm_slide(output_path: str = "presentation/midterm_report_slide.pptx"):
+    # The numbers and claims in this slide come from the pre-fix pipeline (see FIXES.md):
+    # the Channel 4 gain, the GARCH-vs-HAR gap and the 84% boundary figure were bugs.
+    # Rebuild the slide from the re-run results instead of regenerating this one.
+    raise SystemExit("Stale midterm slide script: re-run the experiments and rebuild the slide (see FIXES.md).")
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)

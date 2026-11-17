@@ -1,14 +1,28 @@
 """
 tokenization/bpe_tokenizer.py
-Götz-style BPE Motif Tokenizer for Time Series with UniTok-style Hard Hour Boundaries.
+Götz-style BPE motif tokenizer (Götz et al., 2026) with UniTok-style hard hour
+boundaries (Zhang et al., 2026) and an optional per-hour gate (PATK-inspired).
 
-Key Features:
-1. Equi-width / Quantile Discretization into M base symbols.
-2. Hourly Scale Tokens: Quantize trailing EWMA volatility and insert at hour boundaries.
-3. Hard Boundary Constraint: BPE merges are strictly blocked from crossing hour boundaries,
-   guaranteeing the Incremental Tokenization Property at every hour-aligned origin.
-4. Conditional Decoding: Inverts discrete symbols to continuous values using empirical
-   conditional expectations E[x_i | symbol_i, symbol_{i-1}].
+1. Uniform bins on normalized returns (fixed edges, never fitted).
+2. Merge table learned on TRAIN data only; merges never cross an hour boundary
+   when enforce_hour_boundaries=True, so encoding is incremental at hour-aligned
+   origins: encode(x[:t]) == encode(x)[:phi(t)] whenever t is on an hour boundary.
+3. Hourly scale tokens: the absolute trailing EWMA volatility at each hour start is
+   quantized and emitted before that hour's motifs (absolute level the normalized
+   motifs cannot carry).
+4. Per-hour gate: in hours flagged volatile, only the first `short_merges` merges are
+   applied, so tokens are shorter (finer resolution where volatility is high).
+5. Conditional decoding (Götz eq. 5-6): E[x_i | bin_i, bin_{i-1}] and, for variance
+   forecasts, the matching conditional second moment E[x_i^2 | bin_i, bin_{i-1}].
+
+Merges are applied in rank order (order of creation), which is exactly Götz Alg. 2.
+The implementation repeatedly merges the lowest-rank adjacent pair everywhere it
+occurs; because a merged token can only appear in pairs of higher rank, this gives
+the same output as one left-to-right pass per merge, but much faster.
+
+INPUT CONTRACT for hour-aligned encoding: the array passed to `encode` must start on
+a clock hour and contain whole hours of `bars_per_hour` bars (select_origins in
+data/folds.py guarantees this for every context window).
 """
 
 import sys
@@ -16,245 +30,198 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
-import pandas as pd
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Optional, Sequence
+
 
 class TimeSeriesBPETokenizer:
-    def __init__(
-        self,
-        num_bins: int = 32,
-        val_range: Tuple[float, float] = (-4.0, 4.0),
-        num_merges: int = 64,
-        enforce_hour_boundaries: bool = True,
-        bars_per_hour: int = 12
-    ):
+    def __init__(self, num_bins: int = 32, val_range: Tuple[float, float] = (-4.0, 4.0),
+                 num_merges: int = 64, enforce_hour_boundaries: bool = True, bars_per_hour: int = 12,
+                 num_scale_bins: int = 16, scale_range: Tuple[float, float] = (1e-4, 0.05)):
         self.num_bins = num_bins
         self.val_range = val_range
         self.num_merges = num_merges
         self.enforce_hour_boundaries = enforce_hour_boundaries
         self.bars_per_hour = bars_per_hour
-        
-        # Bin edges for normalized returns
+
         self.bin_edges = np.linspace(val_range[0], val_range[1], num_bins + 1)
         self.bin_centers = 0.5 * (self.bin_edges[:-1] + self.bin_edges[1:])
-        
-        # Scale token bins (for hourly EWMA volatility)
-        self.num_scale_bins = 16
-        self.scale_edges = np.geomspace(1e-4, 0.05, self.num_scale_bins + 1)
-        
-        # Merge rules: list of ((token_a, token_b), new_token_id)
-        self.merges: List[Tuple[Tuple[int, int], int]] = []
-        self.merge_map: Dict[Tuple[int, int], int] = {}
-        
-        # Vocabulary size
-        self.base_vocab_size = num_bins # 0 to M-1
-        self.scale_token_offset = num_bins # M to M + num_scale_bins - 1
-        self.motif_token_offset = num_bins + self.num_scale_bins # motif IDs start here
+
+        self.num_scale_bins = num_scale_bins
+        self.scale_edges = np.geomspace(scale_range[0], scale_range[1], num_scale_bins + 1)
+
+        self.scale_token_offset = num_bins
+        self.motif_token_offset = num_bins + num_scale_bins
         self.vocab_size = self.motif_token_offset
-        
-        # Conditional decoding table: conditional_means[curr_base_bin, prev_base_bin]
-        self.conditional_decoding_table = np.zeros((num_bins, num_bins), dtype=np.float64)
-        # Default to bin centers
-        for j in range(num_bins):
-            self.conditional_decoding_table[j, :] = self.bin_centers[j]
 
-    def quantize_sample(self, val: float) -> int:
-        idx = int(np.digitize(val, self.bin_edges) - 1)
-        return int(np.clip(idx, 0, self.num_bins - 1))
+        self.merges: List[Tuple[Tuple[int, int], int]] = []
+        self.merge_rank: Dict[Tuple[int, int], int] = {}
+        self._children: Dict[int, Tuple[int, int]] = {}
+        self._expand_cache: Dict[int, Tuple[int, ...]] = {}
 
-    def quantize_scale(self, scale_val: float) -> int:
-        idx = int(np.digitize(scale_val, self.scale_edges) - 1)
-        clamped = int(np.clip(idx, 0, self.num_scale_bins - 1))
-        return self.scale_token_offset + clamped
+        # conditional decoding tables, indexed [current_bin, previous_bin]
+        self.cond_mean = np.tile(self.bin_centers[:, None], (1, num_bins))
+        self.cond_m2 = np.tile((self.bin_centers ** 2)[:, None], (1, num_bins))
 
-    def quantize_series(self, returns_norm: np.ndarray) -> np.ndarray:
-        indices = np.digitize(returns_norm, self.bin_edges) - 1
-        return np.clip(indices, 0, self.num_bins - 1).astype(np.int32)
+    # ------------------------------------------------------------------ basics
+    def quantize_series(self, x: np.ndarray) -> np.ndarray:
+        idx = np.digitize(x, self.bin_edges) - 1
+        return np.clip(idx, 0, self.num_bins - 1).astype(np.int64)
 
-    def fit_vocabulary(self, returns_norm: np.ndarray, ewma_scales: Optional[np.ndarray] = None):
-        """
-        Learns BPE merge table from training data.
-        If enforce_hour_boundaries is True, merges are only computed within each hour block.
-        """
-        raw_tokens = self.quantize_series(returns_norm).tolist()
-        n = len(raw_tokens)
-        
-        # Partition into chunks (hours) if boundary enforced
-        if self.enforce_hour_boundaries:
-            chunks = [raw_tokens[i : i + self.bars_per_hour] for i in range(0, n, self.bars_per_hour)]
+    def quantize_scale(self, s: float) -> int:
+        idx = int(np.digitize(s, self.scale_edges) - 1)
+        return self.scale_token_offset + int(np.clip(idx, 0, self.num_scale_bins - 1))
+
+    def _chunks(self, symbols: List[int], chunk_starts: Optional[np.ndarray]) -> List[List[int]]:
+        if not self.enforce_hour_boundaries:
+            return [symbols]
+        n = len(symbols)
+        if chunk_starts is None:
+            starts = list(range(0, n, self.bars_per_hour))
         else:
-            chunks = [raw_tokens]
-            
-        current_token_id = self.motif_token_offset
-        self.merges = []
-        self.merge_map = {}
-        
-        for m in range(self.num_merges):
-            pair_counts: Dict[Tuple[int, int], int] = {}
-            for chunk in chunks:
-                for a, b in zip(chunk[:-1], chunk[1:]):
-                    pair = (a, b)
-                    pair_counts[pair] = pair_counts.get(pair, 0) + 1
-                    
-            if not pair_counts:
+            starts = list(np.flatnonzero(chunk_starts))
+            if not starts or starts[0] != 0:
+                starts = [0] + starts
+        ends = starts[1:] + [n]
+        return [symbols[a:b] for a, b in zip(starts, ends) if b > a]
+
+    # ------------------------------------------------------------------ fitting
+    def fit_vocabulary(self, returns_norm: np.ndarray, chunk_starts: Optional[np.ndarray] = None):
+        """
+        Learns `num_merges` merges on training data. With hour boundaries, pairs are only
+        counted inside hours; `chunk_starts` (bool per bar, True on a clock-hour bar or after
+        a gap) lets the caller define hours by timestamp instead of by index.
+        """
+        chunks = self._chunks(self.quantize_series(returns_norm).tolist(), chunk_starts)
+        next_id = self.motif_token_offset
+        self.merges, self.merge_rank, self._children, self._expand_cache = [], {}, {}, {}
+        for rank in range(self.num_merges):
+            counts: Dict[Tuple[int, int], int] = {}
+            for c in chunks:
+                for a, b in zip(c[:-1], c[1:]):
+                    counts[(a, b)] = counts.get((a, b), 0) + 1
+            if not counts:
                 break
-                
-            best_pair = max(pair_counts.items(), key=lambda x: x[1])
-            if best_pair[1] < 2:
-                # No frequent pairs left
+            pair, cnt = max(counts.items(), key=lambda kv: kv[1])
+            if cnt < 2:
                 break
-                
-            pair_to_merge = best_pair[0]
-            new_id = current_token_id
-            current_token_id += 1
-            
-            self.merges.append((pair_to_merge, new_id))
-            self.merge_map[pair_to_merge] = new_id
-            
-            # Apply merge to all chunks
-            new_chunks = []
-            for chunk in chunks:
-                merged_chunk = []
-                i = 0
-                while i < len(chunk):
-                    if i < len(chunk) - 1 and (chunk[i], chunk[i + 1]) == pair_to_merge:
-                        merged_chunk.append(new_id)
-                        i += 2
-                    else:
-                        merged_chunk.append(chunk[i])
-                        i += 1
-                new_chunks.append(merged_chunk)
-            chunks = new_chunks
-            
-        self.vocab_size = current_token_id
+            self.merges.append((pair, next_id))
+            self.merge_rank[pair] = rank
+            self._children[next_id] = pair
+            chunks = [self._replace_pair(c, pair, next_id) for c in chunks]
+            next_id += 1
+        self.vocab_size = next_id
+        return self
 
     def fit_conditional_decoding(self, returns_norm: np.ndarray):
-        """
-        Fits Götz conditional decoding table E[x_i | symbol_i = j, symbol_{i-1} = k]
-        """
-        symbols = self.quantize_series(returns_norm)
-        sums = np.zeros((self.num_bins, self.num_bins), dtype=np.float64)
-        counts = np.zeros((self.num_bins, self.num_bins), dtype=np.int32)
-        
-        for i in range(1, len(symbols)):
-            curr_s = symbols[i]
-            prev_s = symbols[i - 1]
-            sums[curr_s, prev_s] += returns_norm[i]
-            counts[curr_s, prev_s] += 1
-            
-        for j in range(self.num_bins):
-            for k in range(self.num_bins):
-                if counts[j, k] > 0:
-                    self.conditional_decoding_table[j, k] = sums[j, k] / counts[j, k]
-                else:
-                    self.conditional_decoding_table[j, k] = self.bin_centers[j]
+        """E[x_i | bin_i=j, bin_{i-1}=k] and E[x_i^2 | j, k] from data (Götz eq. 6)."""
+        s = self.quantize_series(returns_norm)
+        j, k, x = s[1:], s[:-1], returns_norm[1:]
+        M = self.num_bins
+        cnt = np.zeros((M, M))
+        s1 = np.zeros((M, M))
+        s2 = np.zeros((M, M))
+        np.add.at(cnt, (j, k), 1.0)
+        np.add.at(s1, (j, k), x)
+        np.add.at(s2, (j, k), x * x)
+        fallback_mean = np.tile(self.bin_centers[:, None], (1, M))
+        fallback_m2 = np.tile((self.bin_centers ** 2)[:, None], (1, M))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            self.cond_mean = np.where(cnt > 0, s1 / cnt, fallback_mean)
+            self.cond_m2 = np.where(cnt > 0, s2 / cnt, fallback_m2)
+        return self
 
-    def encode(
-        self,
-        returns_norm: np.ndarray,
-        ewma_scales: Optional[np.ndarray] = None,
-        include_scale_tokens: bool = True
-    ) -> List[int]:
+    # backward-compatible name used by older scripts
+    @property
+    def conditional_decoding_table(self):
+        return self.cond_mean
+
+    # ------------------------------------------------------------------ encoding
+    @staticmethod
+    def _replace_pair(seq: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
+        out, i, n = [], 0, len(seq)
+        a, b = pair
+        while i < n:
+            if i < n - 1 and seq[i] == a and seq[i + 1] == b:
+                out.append(new_id)
+                i += 2
+            else:
+                out.append(seq[i])
+                i += 1
+        return out
+
+    def _bpe(self, seq: List[int], max_rank: int) -> List[int]:
+        """Applies merges with rank < max_rank in rank order (Götz Alg. 2)."""
+        rank = self.merge_rank
+        while len(seq) > 1:
+            best, best_pair = max_rank, None
+            for p in zip(seq[:-1], seq[1:]):
+                r = rank.get(p)
+                if r is not None and r < best:
+                    best, best_pair = r, p
+            if best_pair is None:
+                break
+            seq = self._replace_pair(seq, best_pair, self.merges[best][1])
+        return seq
+
+    def encode(self, returns_norm: np.ndarray, ewma_scales: Optional[np.ndarray] = None,
+               include_scale_tokens: bool = True, gate_flags: Optional[Sequence[bool]] = None,
+               short_merges: Optional[int] = None) -> List[int]:
         """
-        Encodes a normalized return sequence into tokens.
-        If enforce_hour_boundaries is True, inserts scale tokens at hour starts
-        and applies BPE merges strictly inside each hour.
+        returns_norm : normalized returns, starting on an hour boundary when hour-aligned.
+        ewma_scales  : absolute EWMA vol per bar (same length); the value at each hour
+                       start becomes that hour's scale token.
+        gate_flags   : one bool per hour; True = volatile hour -> only `short_merges` merges.
         """
-        raw_symbols = self.quantize_series(returns_norm).tolist()
-        n = len(raw_symbols)
-        
+        symbols = self.quantize_series(returns_norm).tolist()
+        full = len(self.merges)
         if not self.enforce_hour_boundaries:
-            # Global BPE without boundaries (The Leak Channel 4)
-            current = raw_symbols
-            for pair, new_id in self.merges:
-                merged = []
-                i = 0
-                while i < len(current):
-                    if i < len(current) - 1 and (current[i], current[i + 1]) == pair:
-                        merged.append(new_id)
-                        i += 2
-                    else:
-                        merged.append(current[i])
-                        i += 1
-                current = merged
-            return current
+            return self._bpe(symbols, full)
 
-        # Causal / UniTok hour-aligned encoding
-        token_stream = []
-        for h_start in range(0, n, self.bars_per_hour):
-            h_end = min(n, h_start + self.bars_per_hour)
-            
-            # 1. Scale token at hour start
+        short = full // 4 if short_merges is None else short_merges
+        out: List[int] = []
+        for h, start in enumerate(range(0, len(symbols), self.bars_per_hour)):
             if include_scale_tokens and ewma_scales is not None:
-                scale_val = ewma_scales[h_start]
-                token_stream.append(self.quantize_scale(scale_val))
-                
-            # 2. BPE within hour
-            chunk = raw_symbols[h_start:h_end]
-            for pair, new_id in self.merges:
-                merged = []
-                i = 0
-                while i < len(chunk):
-                    if i < len(chunk) - 1 and (chunk[i], chunk[i + 1]) == pair:
-                        merged.append(new_id)
-                        i += 2
-                    else:
-                        merged.append(chunk[i])
-                        i += 1
-                chunk = merged
-            token_stream.extend(chunk)
-            
-        return token_stream
+                out.append(self.quantize_scale(float(ewma_scales[start])))
+            flag = bool(gate_flags[h]) if gate_flags is not None else False
+            out.extend(self._bpe(symbols[start:start + self.bars_per_hour], short if flag else full))
+        return out
+
+    # ------------------------------------------------------------------ decoding
+    def expand(self, token_id: int) -> Tuple[int, ...]:
+        """Base-bin symbols covered by a token (scale tokens and unknown ids cover none)."""
+        if token_id < self.scale_token_offset:
+            return (token_id,)
+        if token_id < self.motif_token_offset:
+            return ()
+        hit = self._expand_cache.get(token_id)
+        if hit is None:
+            pair = self._children.get(token_id)
+            hit = () if pair is None else self.expand(pair[0]) + self.expand(pair[1])
+            self._expand_cache[token_id] = hit
+        return hit
 
     def decompose_token(self, token_id: int) -> List[int]:
-        """
-        Recursively unpacks a motif token back into its constituent base bin symbols.
-        """
-        if token_id < self.motif_token_offset:
-            if token_id < self.scale_token_offset:
-                return [token_id] # base bin symbol
-            else:
-                return [] # scale token has no return samples
-                
-        # Find the merge rule that generated this token
-        for (a, b), tid in self.merges:
-            if tid == token_id:
-                return self.decompose_token(a) + self.decompose_token(b)
-        return [token_id % self.num_bins]
+        return list(self.expand(token_id))
 
-    def decode(self, token_sequence: List[int], use_conditional: bool = True) -> np.ndarray:
-        """
-        Decodes a token sequence back into continuous normalized returns.
-        """
-        base_symbols = []
-        for t in token_sequence:
-            base_symbols.extend(self.decompose_token(t))
-            
-        if not base_symbols:
-            return np.array([], dtype=np.float64)
-            
-        decoded = np.zeros(len(base_symbols), dtype=np.float64)
-        decoded[0] = self.bin_centers[base_symbols[0]]
-        
-        for i in range(1, len(base_symbols)):
-            curr_s = base_symbols[i]
-            prev_s = base_symbols[i - 1]
-            if use_conditional:
-                decoded[i] = self.conditional_decoding_table[curr_s, prev_s]
-            else:
-                decoded[i] = self.bin_centers[curr_s]
-                
-        return decoded
+    def token_lengths(self, size: int) -> np.ndarray:
+        """Number of bars covered by each id in [0, size)."""
+        return np.array([len(self.expand(i)) for i in range(size)], dtype=np.int64)
+
+    def decode(self, token_sequence: Sequence[int], use_conditional: bool = True) -> np.ndarray:
+        base = [s for t in token_sequence for s in self.expand(int(t))]
+        if not base:
+            return np.array([])
+        out = np.empty(len(base))
+        out[0] = self.bin_centers[base[0]]
+        for i in range(1, len(base)):
+            out[i] = self.cond_mean[base[i], base[i - 1]] if use_conditional else self.bin_centers[base[i]]
+        return out
+
 
 if __name__ == "__main__":
-    from simulation.garch_simulator import GARCHSimulator
-    sim = GARCHSimulator()
-    ret, sig = sim.simulate(n_steps=2000)
-    tok = TimeSeriesBPETokenizer(num_bins=16, num_merges=32, enforce_hour_boundaries=True)
-    tok.fit_vocabulary(ret[:1000])
-    tok.fit_conditional_decoding(ret[:1000])
-    encoded = tok.encode(ret[1000:1100], ewma_scales=np.sqrt(sig[1000:1100]))
-    decoded = tok.decode(encoded)
-    print(f"Original length: 100, Encoded length: {len(encoded)}, Decoded length: {len(decoded)}")
-    print(f"Compression ratio: {100.0 / len(encoded):.2f}x")
-
+    rng = np.random.default_rng(0)
+    x = rng.standard_t(4, 12 * 2000) * 0.7
+    tok = TimeSeriesBPETokenizer().fit_vocabulary(x[:12 * 1500])
+    tok.fit_conditional_decoding(x[:12 * 1500])
+    enc = tok.encode(x[12 * 1500:12 * 1600], include_scale_tokens=False)
+    print("merges:", len(tok.merges), "compression:", 1200 / len(enc))

@@ -1,142 +1,116 @@
 # Quantifying Look-Ahead Bias via Causal, Volatility-Aware Motif Tokenization in Financial Time Series
 
-[![Course](https://img.shields.io/badge/Course-DA4022-blue.svg)](#)
-[![Python](https://img.shields.io/badge/Python-3.12-green.svg)](#)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.14-orange.svg)](#)
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)](#)
+> **DA4022 Course Project · Team of 5**
+> A harness that switches on one look-ahead leakage channel at a time inside a BPE
+> motif tokenizer and measures how much each one inflates walk-forward realized
+> volatility forecasts.
 
-> **DA4022 Course Project · Team of 5**  
-> An experimental framework to isolate and quantify look-ahead bias across tokenization layers in financial time-series foundation models.
-
----
-
-## 📌 Motivation & Overview
-
-Recent advances apply Byte Pair Encoding (BPE) and transformer architectures to time-series forecasting. While these models claim impressive zero-shot results, standard tokenizers introduce subtle **look-ahead leakage** in single-market walk-forward forecasting:
-1. **Fit-Time Leakage:** Normalization parameters, BPE merge dictionaries, and conditional decoding tables calibrated on datasets overlapping future test periods.
-2. **Encode-Time Leakage:** Unconstrained BPE motifs straddle the boundary between past context and future forecast horizons, leaking post-origin information backward into historical representations.
-
-This repository provides:
-- A **strictly causal, leak-free reference pipeline** (trailing EWMA normalization + UniTok hourly hard boundaries + causal RoV $\times$ SEI gate).
-- A **Negative Control Benchmark** (GARCH(1,1) simulated process with exact closed-form analytical oracle QLIKE floor).
-- A systematic harness switching on **5 leakage channels** one-by-one to measure their artificial performance inflation on real **Binance BTCUSDT 5-minute klines (2019–2025)**.
+**Status (15 Oct 2026):** the pipeline was corrected after an audit; see [`FIXES.md`](FIXES.md).
+The earlier headline numbers for Channel 4 (+16.6%), GARCH vs HAR (−21.7%) and the
+84% boundary-mismatch rate came from bugs and have been withdrawn. The token-level
+audit and the baselines below were re-run on Fold 1 after the fixes; the per-channel
+GPT audit is being re-run.
 
 ---
 
-## 🔬 System Architecture & The 5 Leak Switches
+## Motivation
 
-![Architecture Diagram](results/figures/pipeline_leak_switches.png)
+BPE motif tokenizers for time series (Götz et al., 2026) are validated zero-shot on
+held-out datasets. Used for walk-forward forecasting on one market they can leak the
+future in two ways:
 
-1. **Channel 1 (Per-Window Normalization Leak):** Scales context using future horizon standard deviation.
-2. **Channel 2 (Merge Table Leak):** Learns BPE vocabulary on data overlapping the test set.
-3. **Channel 3 (Decoding Table Leak):** Estimates Götz conditional decoding matrix on future realizations.
-4. **Channel 4 (Token Boundary Leak):** Applies global unconstrained BPE across past and future, slicing post-hoc.
-5. **Channel 5 (Non-Causal FFT Leak):** Computes frequency-domain energy using centered windows extending into future bars.
-6. **Positive Control (Gross Leak):** Directly injects target realized variance into normalization to measure the theoretical ceiling.
+1. **Fit-time leakage:** normalization statistics, the merge table or the conditional
+   decoding tables are estimated on data overlapping the test period.
+2. **Encode-time leakage:** rank-ordered BPE violates the incremental tokenization
+   property (Zhang et al., 2026): a stream tokenized once and then cut at the forecast
+   origin carries post-origin information in its token boundaries. Tokenizing the
+   context alone instead leaves a partial final token (partial-token bias).
 
----
+## Pipeline
 
-## 📊 Key Empirical Findings
+* **Data:** Binance BTCUSDT 5-minute klines, one contiguous frame per fold (train + test),
+  log returns, gaps flagged, returns across gaps set to zero.
+* **Normalization:** trailing EWMA volatility (λ = 0.94), uses bars up to t−1 only.
+* **Tokenizer (causal reference):** 32 uniform bins on [−4, 4], 64 Götz merges learned on
+  train only, merges never cross a clock hour (UniTok-style hard boundary), an hourly
+  scale token carrying absolute EWMA volatility, and a causal RoV × SEI gate (PATK-inspired)
+  that applies only the first 16 merges in volatile hours (shorter tokens).
+* **Model:** ~0.8M-parameter causal GPT; two forecast heads: a direct RV regression head,
+  and a generative head (sample future tokens, decode with Götz conditional decoding
+  tables `E[x² | bin, previous bin]`).
+* **Target:** at origin t, RV_H[t] = Σ_{k<H} r²_{t+k} using information up to t−1.
+  Every model (GPT arms, HAR-RV, GARCH, oracle) is scored on the same hour-aligned origins.
 
-### 1. Token Boundary Mismatch Audit (300 Origins)
-![Boundary Mismatch](results/figures/boundary_mismatch_and_compression.png)
-- **UniTok Hard Boundaries (Our Causal Ref):** **0.00% mismatch rate** (strictly incremental).
-- **Unconstrained Götz BPE (Channel 4):** **84.00% boundary straddling & mismatch rate!**  
-*Naive BPE creates tokens spanning across the forecast cutoff in 84 out of 100 origins.*
+## Experimental arms (one switch each)
 
-### 2. Negative Control: GARCH(1,1) Oracle Floor
-![Negative Control](results/figures/negative_control_oracle_floor.png)
-- **Oracle Floor (Analytical Ground Truth):** QLIKE = **0.15096**
-- **Causal GARCH(1,1) Baseline:** QLIKE = **0.15110** (honestly respects floor, $+0.00014$)
-- **Causal HAR-RV Baseline:** QLIKE = **0.34887**
-- **Gross Leak (Positive Control):** QLIKE = **0.00505** (violates floor by $-0.14591$, Diebold–Mariano $z=23.24, p < 10^{-10}$)
+| Arm | Matched control | Switch |
+|---|---|---|
+| `reference` | – | leak-free pipeline above |
+| `ch1_window_norm_leak` | `ch1_control_window` | window std computed over context **+ horizon** (control: context only) |
+| `ch2_merge_table_leak` | `reference` | merge table fitted on train + test |
+| `ch3_decode_table_leak` | `reference` | decoding tables fitted on train + test (generative head only) |
+| `ch4_boundary_leak` | `ch4_control_context_only` | unconstrained BPE over context + horizon, then cut at t |
+| `ch4_control_context_only` vs `reference` | – | **partial-token bias** (unconstrained vs hour-bounded) |
+| `ch5_noncausal_fft_leak` | `reference` | gate's RoV × SEI window centered on the hour (reaches 6 bars past t) |
+| `positive_control` | `reference` | context normalized by the true future RV |
 
-### 3. Real BTCUSDT Fold 1 Volatility Forecasting (2021 Train $\to$ 2022-Q1 Test)
-![Inflation Comparison](results/figures/leakage_inflation_comparison.png)
+Each arm trains its own model with the switch on in training **and** testing. Tests:
+QLIKE with moving-block bootstrap CIs, Diebold–Mariano (HAC) with Holm correction across
+the leak family, Giacomini–White, and TOST equivalence (±5% of the control's QLIKE).
+Negative control: the same pipeline on simulated GARCH(1,1) data, where the analytic
+oracle forecast is a floor no causal model can beat in expectation.
 
-| Model / Variant | Out-of-Sample QLIKE | Artificial Inflation vs Ref | Statistical Finding |
-| :--- | :---: | :---: | :--- |
-| **HAR-RV Baseline** | 0.5428 | Benchmark | Classical econometric reference |
-| **GARCH(1,1) Baseline** | 0.7770 | $-21.74\%$ | Classical baseline |
-| **Causal Reference GPT (Our Model)** | **0.6383** | **0.00% (Honest)** | 95% CI: `[0.518, 0.802]` |
-| **Channel 1 (Window Norm Leak)** | 0.5930 | **$+7.09\%$ Fake Gain** | Normalizing with future horizon std |
-| **Channel 2 (Merge Table Leak)** | 0.6384 | $-0.02\%$ (No Gain) | TOST confirmed equivalent |
-| **Channel 3 (Decode Table Leak)** | 0.6383 | $+0.00\%$ (No Gain) | TOST confirmed equivalent |
-| **Channel 4 (Boundary Leak)** | **0.5326** | **$+16.56\%$ Fake Gain** | **Statistically Significant ($p = 0.0043^*$)** |
-| **Positive Control (Gross Leak)** | **0.1963** | **$+69.24\%$ Fake Gain** | **Statistically Significant ($p < 0.0001^*$)** |
+## Results re-run after the fixes (Fold 1: train 2021, test 2022-Q1)
 
----
+**Token-level causality audit** (`run_boundary_experiment.py`, 500 test origins):
 
-## 📁 Repository Structure
+| Tokenizer | Slice ≠ prefix, hour-aligned origin | Slice ≠ prefix, origin 5 bars past the hour | Future perturbation changes pre-origin tokens |
+|---|---|---|---|
+| Hour boundaries, no gate | 0% | 35.6% | 0% |
+| Hour boundaries + causal gate (reference) | 0% | 31.0% | 0% |
+| Hour boundaries + centered gate (Ch5) | 0% | 30.4% | 57.0% |
+| Unconstrained Götz BPE (Ch4) | 32.0% | 34.0% | 29.5% |
+
+The causal reference is incremental only at hour-aligned origins, which is why every
+experiment uses clock-hour origins. On normalized 5-minute returns, 64 merges compress
+only 1.40 bars per token (128 merges: 1.54).
+
+**Baselines** (`run_baselines.py`, 2,160 hourly test origins, next-hour RV):
+HAR-RV QLIKE 0.516 [0.469, 0.575]; GARCH(1,1) QLIKE 0.483 [0.424, 0.556];
+GARCH is better (DM p = 0.005).
+
+**Per-channel GPT audit:** pending re-run (`run_leak_experiments.py`).
+
+## Repository structure
 
 ```text
-├── data/
-│   ├── download_binance.py       # Ingests 5-min BTCUSDT klines from Binance Vision
-│   ├── preprocess.py             # Trailing EWMA normalization & RV targets
-│   ├── folds.py                  # 6 expanding walk-forward folds configuration
-│   └── SEALED_2025_HOLDOUT.txt   # Cryptographic holdout lock (untouched until code freeze)
-├── simulation/
-│   └── garch_simulator.py        # Synthetic GARCH DGP & analytic oracle volatility
-├── tokenization/
-│   ├── bpe_tokenizer.py          # Götz BPE + UniTok hard hour-boundaries & conditional decoding
-│   ├── causal_gate.py            # Causal trailing RoV × SEI gate (PATK)
-│   ├── causality_tests.py        # Future-perturbation test & boundary-mismatch test
-│   └── leak_tokenizer.py         # The 5 leakage channel switches & positive control
-├── models/
-│   ├── baselines.py              # Econometric baselines: HAR-RV & GARCH(1,1)
-│   └── gpt_model.py              # ~850k parameter causal GPT with direct RV head
-├── evaluation/
-│   ├── metrics.py                # Patton (2011) QLIKE, RMSE, MAE
-│   └── hypothesis_tests.py       # Block bootstrap, Diebold-Mariano, TOST, Holm correction
-├── experiments/
-│   ├── run_oracle_experiment.py  # Negative control benchmark experiment
-│   ├── run_boundary_experiment.py# 300-origin boundary mismatch & compression analysis
-│   ├── run_baselines.py          # Real BTCUSDT econometric baseline runs
-│   └── run_leak_experiments.py   # Full 6-variant leakage audit on Fold 1
-├── presentation/
-│   ├── generate_figures.py       # Publication figure generator
-│   ├── render_slide_image.py     # 300 DPI single-slide report renderer
-│   ├── midterm_report_slide.pptx # Widescreen 16:9 presentation slide deck
-│   └── midterm_report_slide.png  # Exported slide preview image
-└── results/                      # Generated JSON metric tables & figure assets
+data/            download_binance.py, preprocess.py (EWMA, targets), folds.py (folds, origins)
+simulation/      garch_simulator.py (GARCH DGP + analytic oracle)
+tokenization/    bpe_tokenizer.py, causal_gate.py, leak_tokenizer.py (all arms), causality_tests.py
+models/          gpt_model.py (GPT + generative RV), baselines.py (HAR-RV, GARCH)
+evaluation/      metrics.py (QLIKE), hypothesis_tests.py (bootstrap, DM, GW, TOST, Holm)
+experiments/     run_boundary_experiment.py, run_baselines.py, run_leak_experiments.py, run_oracle_experiment.py
+presentation/    generate_figures.py (old slide scripts are disabled: their numbers were pre-fix)
 ```
 
----
+## Reproduce
 
-## 🚀 Quickstart & Reproduction
-
-### 1. Environment Setup
 ```bash
-# Clone the repository
-git clone <YOUR_REPO_URL>
-cd "DA course project"
-
-# Setup virtual environment with uv or pip
-uv venv .venv --python 3.12
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install torch numpy pandas scipy statsmodels arch matplotlib python-pptx requests pyarrow
-```
-
-### 2. Run Negative Control & Boundary Audit
-```bash
-python experiments/run_oracle_experiment.py
-python experiments/run_boundary_experiment.py
-```
-
-### 3. Run Real Market Baselines & Leakage Sweeps
-```bash
-python experiments/run_baselines.py
-python experiments/run_leak_experiments.py
-```
-
-### 4. Regenerate Figures & Presentation Deck
-```bash
+pip install torch numpy pandas scipy arch matplotlib requests pyarrow
+# monthly CSVs in data/raw are reused; missing months are downloaded from data.binance.vision
+python experiments/run_boundary_experiment.py --fold 1
+python experiments/run_baselines.py --fold 1
+python experiments/run_leak_experiments.py --fold 1 --seeds 0            # add --seeds 0 1 2 for the final run
+python experiments/run_leak_experiments.py --fold 1 --horizon 288        # next-day RV
+python experiments/run_oracle_experiment.py --seeds 0                    # negative control
 python presentation/generate_figures.py
-python presentation/make_midterm_slide.py
-python presentation/render_slide_image.py
 ```
 
----
+`run_leak_experiments.py --help` lists options (`--arms`, `--epochs`, `--no-generative`,
+`--n-samples`, `--device`). On CPU one seed of all arms takes roughly 1–2 hours.
 
-## 🔒 Methodological Integrity
-To strictly guarantee zero post-hoc tuning and complete scientific reproducibility, the **2025 dataset is cryptographically sealed** in [`data/SEALED_2025_HOLDOUT.txt`](data/SEALED_2025_HOLDOUT.txt) and will not be touched or unsealed until the official project code freeze on November 14, 2026.
+## Holdout
+
+The 2025 data is not part of any fold and is not downloaded by these scripts. It will be
+scored once after the code freeze (14 Nov 2026). (The earlier "cryptographically sealed"
+wording was inaccurate: `data/SEALED_2025_HOLDOUT.txt` is a written commitment, not a hash.)

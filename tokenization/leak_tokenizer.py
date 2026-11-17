@@ -1,187 +1,189 @@
 """
 tokenization/leak_tokenizer.py
-Implementation of the 5 Look-Ahead Leakage Channels & Controls:
-1. Channel 1: Per-window normalization leak (uses target horizon in normalization)
-2. Channel 2: Merge table leak (estimates BPE vocabulary on test period)
-3. Channel 3: Decoding table leak (estimates conditional decoding table on test period)
-4. Channel 4: Token boundary leak (non-incremental global BPE without hard boundaries)
-5. Channel 5: Non-causal FFT leak (centered spectral window looking into future)
-6. Positive Control: Deliberately gross normalization leak (normalizes by future RV)
-7. Causal Reference: Completely leak-free baseline (trailing EWMA + hard boundaries + train-only tables)
+Builds the model input for every experimental arm at a forecast origin t.
+
+Every arm sees the context bars [t - C, t) and is scored on RV_H[t] = sum_{k<H} r_{t+k}^2.
+Each leak arm differs from its matched control in ONE thing only:
+
+  arm                        matched control            the single switch
+  -------------------------  -------------------------  -----------------------------------------
+  reference                  -                          leak-free: per-bar trailing EWMA norm,
+                                                        hour boundaries, train-only tables,
+                                                        causal RoV x SEI gate, hourly scale tokens
+  ch1_control_window         -                          per-window std normalization, context only
+  ch1_window_norm_leak       ch1_control_window         ... std computed over context + horizon
+  ch2_merge_table_leak       reference                  merge table fitted on train + test
+  ch3_decode_table_leak      reference                  decoding tables fitted on train + test
+                                                        (only affects the generative forecast)
+  ch4_control_context_only   -                          unconstrained BPE (no hour boundaries) on
+                                                        the context alone -> partial-token bias
+  ch4_boundary_leak          ch4_control_context_only   ... stream tokenized once over context +
+                                                        horizon, then cut at t (the token that
+                                                        straddles t is kept -> future info)
+  ch5_noncausal_fft_leak     reference                  gate window centered on each hour
+  positive_control           reference                  context normalized by the TRUE future RV
+
+The partial-token trade-off of the proposal is read off two comparisons:
+  boundary leakage   = ch4_boundary_leak vs ch4_control_context_only
+  partial-token bias = ch4_control_context_only vs reference (hour-aligned, no partial token)
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import copy
 import numpy as np
-from typing import Dict, Any, List, Tuple, Optional
+import pandas as pd
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
 from tokenization.bpe_tokenizer import TimeSeriesBPETokenizer
+from tokenization.causal_gate import CausalRoVSEIGate
+
+ARMS: Dict[str, dict] = {
+    "reference":                {"label": "Causal reference (leak-free)",     "control": None},
+    "ch1_control_window":       {"label": "Ch1 control: window norm, causal", "control": None},
+    "ch1_window_norm_leak":     {"label": "Ch1: window norm uses horizon",    "control": "ch1_control_window"},
+    "ch2_merge_table_leak":     {"label": "Ch2: merge table on train+test",   "control": "reference"},
+    "ch3_decode_table_leak":    {"label": "Ch3: decode tables on train+test", "control": "reference"},
+    "ch4_control_context_only": {"label": "Ch4 control: unconstrained BPE, context only", "control": None},
+    "ch4_boundary_leak":        {"label": "Ch4: tokenize stream, then split", "control": "ch4_control_context_only"},
+    "ch5_noncausal_fft_leak":   {"label": "Ch5: centered (non-causal) gate FFT", "control": "reference"},
+    "positive_control":         {"label": "Positive control: true future RV norm", "control": "reference"},
+}
+
+
+@dataclass
+class ArmInput:
+    tokens: List[int]
+    scale: float              # forecasts are made for RV / scale^2 and rescaled by scale^2
+    decode_tok_name: str      # which tokenizer's tables decode generated tokens
+    known_future: List[int]   # base bins of post-origin bars already inside the input (ch4 leak only)
+
 
 class LeakageManager:
-    def __init__(
-        self,
-        num_bins: int = 32,
-        num_merges: int = 64,
-        bars_per_hour: int = 12
-    ):
-        self.num_bins = num_bins
-        self.num_merges = num_merges
-        self.bars_per_hour = bars_per_hour
-        
-        # Reference Causal Tokenizer
-        self.causal_tok = TimeSeriesBPETokenizer(
-            num_bins=num_bins,
-            num_merges=num_merges,
-            enforce_hour_boundaries=True,
-            bars_per_hour=bars_per_hour
-        )
-        
-        # Leak Channel 4 Tokenizer (Global BPE without boundaries)
-        self.boundary_leak_tok = TimeSeriesBPETokenizer(
-            num_bins=num_bins,
-            num_merges=num_merges,
-            enforce_hour_boundaries=False,
-            bars_per_hour=bars_per_hour
-        )
+    def __init__(self, num_bins: int = 32, num_merges: int = 64, bars_per_hour: int = 12,
+                 context_len: int = 144, horizon: int = 12, use_gate: bool = True,
+                 use_scale_tokens: bool = True, gate_lookback: int = 24, gate_quantile: float = 0.75,
+                 short_merges: Optional[int] = None):
+        assert context_len % bars_per_hour == 0
+        self.C, self.H, self.bph = context_len, horizon, bars_per_hour
+        self.use_gate, self.use_scale_tokens = use_gate, use_scale_tokens
+        self.short_merges = num_merges // 4 if short_merges is None else short_merges
+        kw = dict(num_bins=num_bins, num_merges=num_merges, bars_per_hour=bars_per_hour)
+        self.toks: Dict[str, TimeSeriesBPETokenizer] = {
+            "causal": TimeSeriesBPETokenizer(enforce_hour_boundaries=True, **kw),
+            "unconstrained": TimeSeriesBPETokenizer(enforce_hour_boundaries=False, **kw),
+        }
+        self.gate_causal = CausalRoVSEIGate(gate_lookback, bars_per_hour, gate_quantile, mode="causal")
+        self.gate_centered = CausalRoVSEIGate(gate_lookback, bars_per_hour, gate_quantile, mode="centered")
+        self._cache: Dict[tuple, List[int]] = {}
 
-    def fit_reference(self, train_returns: np.ndarray, train_ewma_vol: np.ndarray):
-        """Fits reference causal tokenizer strictly on training data."""
-        train_norm = train_returns / np.maximum(train_ewma_vol, 1e-6)
-        self.causal_tok.fit_vocabulary(train_norm)
-        self.causal_tok.fit_conditional_decoding(train_norm)
+    # ------------------------------------------------------------------ fitting
+    def fit(self, df: pd.DataFrame, split: int):
+        """Fits everything that must be train-only on df[:split]; leaked tables on all of df."""
+        self.r = df["return"].values.astype(np.float64)
+        self.ev = df["ewma_vol"].values.astype(np.float64)
+        self.xn = df["norm_return"].values.astype(np.float64)
+        times = pd.to_datetime(df["open_time"])
+        on_hour = times.dt.minute.values == 0
+        chunk_starts = on_hour | ~df["contiguous"].values.astype(bool)
+        hour_starts = np.flatnonzero(on_hour)
 
-    def fit_leaked_tables(self, full_returns: np.ndarray, full_ewma_vol: np.ndarray):
-        """
-        Fits merge table and decoding table on entire dataset (train + test),
-        creating Channel 2 and Channel 3 leaked tokenizers.
-        """
-        full_norm = full_returns / np.maximum(full_ewma_vol, 1e-6)
-        
-        # Channel 2: Merge Table Leak
-        self.merge_leaked_tok = TimeSeriesBPETokenizer(
-            num_bins=self.num_bins,
-            num_merges=self.num_merges,
-            enforce_hour_boundaries=True,
-            bars_per_hour=self.bars_per_hour
-        )
-        self.merge_leaked_tok.fit_vocabulary(full_norm)
-        # Use causal decoding table
-        self.merge_leaked_tok.conditional_decoding_table = self.causal_tok.conditional_decoding_table.copy()
-        
-        # Channel 3: Decoding Table Leak
-        self.decoding_leaked_tok = TimeSeriesBPETokenizer(
-            num_bins=self.num_bins,
-            num_merges=self.num_merges,
-            enforce_hour_boundaries=True,
-            bars_per_hour=self.bars_per_hour
-        )
-        self.decoding_leaked_tok.merges = self.causal_tok.merges.copy()
-        self.decoding_leaked_tok.merge_map = self.causal_tok.merge_map.copy()
-        self.decoding_leaked_tok.vocab_size = self.causal_tok.vocab_size
-        self.decoding_leaked_tok.fit_conditional_decoding(full_norm)
+        ct, ut = self.toks["causal"], self.toks["unconstrained"]
+        ct.fit_vocabulary(self.xn[:split], chunk_starts[:split]).fit_conditional_decoding(self.xn[:split])
+        ut.fit_vocabulary(self.xn[:split]).fit_conditional_decoding(self.xn[:split])
 
-    def extract_features(
-        self,
-        returns: np.ndarray,
-        ewma_vol: np.ndarray,
-        origin_t: int,
-        context_len: int = 144, # 12 hours
-        horizon: int = 12,      # 1 hour ahead
-        channel: str = "reference"
-    ) -> Tuple[np.ndarray, float]:
-        """
-        Extracts tokenized input sequence and scale factor at forecast origin t.
-        Channels supported:
-        - 'reference': Causal trailing EWMA, hard boundaries, train-only tables
-        - 'channel_1_norm_leak': Per-window normalization using future horizon
-        - 'channel_2_merge_leak': Leaked merge table
-        - 'channel_3_decode_leak': Leaked decoding table
-        - 'channel_4_boundary_leak': Global BPE without hour boundaries
-        - 'channel_5_fft_leak': Centered FFT looking into future
-        - 'positive_control': Gross leak using true future target RV
-        """
-        start_idx = origin_t - context_len
-        assert start_idx >= 0, "Insufficient context before origin_t"
-        
-        raw_context = returns[start_idx:origin_t]
-        
-        # 1. Normalization
-        if channel == "reference":
-            # Strictly causal: scale at origin t comes from past
-            scale = float(ewma_vol[origin_t])
-            norm_ctx = raw_context / max(scale, 1e-6)
-            tok = self.causal_tok
-            tokens = tok.encode(norm_ctx, include_scale_tokens=False)
-            
-        elif channel == "channel_1_norm_leak":
-            # Window std computed over context PLUS future horizon!
-            future_window = returns[start_idx : origin_t + horizon]
-            leaked_scale = float(np.std(future_window))
-            norm_ctx = raw_context / max(leaked_scale, 1e-6)
-            tokens = self.causal_tok.encode(norm_ctx, include_scale_tokens=False)
-            scale = leaked_scale
-            
-        elif channel == "channel_2_merge_leak":
-            scale = float(ewma_vol[origin_t])
-            norm_ctx = raw_context / max(scale, 1e-6)
-            tokens = self.merge_leaked_tok.encode(norm_ctx, include_scale_tokens=False)
-            
-        elif channel == "channel_3_decode_leak":
-            scale = float(ewma_vol[origin_t])
-            norm_ctx = raw_context / max(scale, 1e-6)
-            tokens = self.decoding_leaked_tok.encode(norm_ctx, include_scale_tokens=False)
-            
-        elif channel == "channel_4_boundary_leak":
-            # Global BPE on context + future, sliced at origin t
-            scale = float(ewma_vol[origin_t])
-            full_window = returns[start_idx : origin_t + horizon]
-            norm_full = full_window / max(scale, 1e-6)
-            full_tokens = self.boundary_leak_tok.encode(norm_full, include_scale_tokens=False)
-            # Find tokens up to context_len
-            tokens = []
-            curr = 0
-            for t_id in full_tokens:
-                sub = self.boundary_leak_tok.decompose_token(t_id)
-                curr += len(sub)
-                tokens.append(t_id)
-                if curr >= context_len:
+        # Channel 2: merge table learned on train + test; decoding tables stay train-only
+        mt = TimeSeriesBPETokenizer(enforce_hour_boundaries=True, num_bins=ct.num_bins,
+                                    num_merges=ct.num_merges, bars_per_hour=self.bph)
+        mt.fit_vocabulary(self.xn, chunk_starts)
+        mt.cond_mean, mt.cond_m2 = ct.cond_mean.copy(), ct.cond_m2.copy()
+        self.toks["merge_leaked"] = mt
+        # Channel 3: train-only merges, decoding tables learned on train + test
+        dt = copy.deepcopy(ct)
+        dt.fit_conditional_decoding(self.xn)
+        self.toks["decode_leaked"] = dt
+
+        # gates: thresholds from train hours only (windows restricted to the train span)
+        train_hours = hour_starts[hour_starts < split]
+        self.gate_causal.fit_threshold(self.xn[:split], train_hours)
+        self.gate_centered.fit_threshold(self.xn[:split], train_hours)
+        self.flags_causal = self.gate_causal.flags_per_bar(self.xn, hour_starts)
+        self.flags_centered = self.gate_centered.flags_per_bar(self.xn, hour_starts)
+        self._cache.clear()
+        return self
+
+    def vocab_size(self) -> int:
+        return max(t.vocab_size for t in self.toks.values())
+
+    # ------------------------------------------------------------------ helpers
+    def _hour_flags(self, t: int, centered: bool = False) -> Optional[List[bool]]:
+        if not self.use_gate:
+            return None
+        f = self.flags_centered if centered else self.flags_causal
+        return [bool(f[s]) for s in range(t - self.C, t, self.bph)]
+
+    def _hourly(self, tok_name: str, t: int, x: Optional[np.ndarray] = None, centered_gate: bool = False) -> List[int]:
+        """Hour-aligned encoding of [t-C, t). If x is None the per-bar normalized series is used
+        and each hour's encoding is cached (it does not depend on the origin)."""
+        tok = self.toks[tok_name]
+        flags = self._hour_flags(t, centered_gate)
+        out: List[int] = []
+        for h, s in enumerate(range(t - self.C, t, self.bph)):
+            if self.use_scale_tokens:
+                out.append(tok.quantize_scale(self.ev[s]))
+            flag = flags[h] if flags is not None else False
+            if x is None:
+                key = (tok_name, s, flag)
+                enc = self._cache.get(key)
+                if enc is None:
+                    enc = tok.encode(self.xn[s:s + self.bph], include_scale_tokens=False,
+                                     gate_flags=[flag], short_merges=self.short_merges)
+                    self._cache[key] = enc
+            else:
+                off = s - (t - self.C)
+                enc = tok.encode(x[off:off + self.bph], include_scale_tokens=False,
+                                 gate_flags=[flag], short_merges=self.short_merges)
+            out.extend(enc)
+        return out
+
+    # ------------------------------------------------------------------ main entry
+    def extract(self, t: int, arm: str) -> ArmInput:
+        C, H, r = self.C, self.H, self.r
+        assert t - C >= 0 and t + H <= len(r)
+        if arm in ("reference", "ch2_merge_table_leak", "ch3_decode_table_leak", "ch5_noncausal_fft_leak"):
+            tok_name = "merge_leaked" if arm == "ch2_merge_table_leak" else "causal"
+            toks = self._hourly(tok_name, t, centered_gate=(arm == "ch5_noncausal_fft_leak"))
+            dec = {"ch2_merge_table_leak": "merge_leaked", "ch3_decode_table_leak": "decode_leaked"}.get(arm, "causal")
+            return ArmInput(toks, float(self.ev[t]), dec, [])
+
+        if arm in ("ch1_control_window", "ch1_window_norm_leak", "positive_control"):
+            ctx = r[t - C:t]
+            if arm == "ch1_control_window":
+                scale = float(np.std(ctx))
+            elif arm == "ch1_window_norm_leak":
+                scale = float(np.std(r[t - C:t + H]))
+            else:
+                scale = float(np.sqrt(np.sum(r[t:t + H] ** 2) / H))
+            scale = max(scale, 1e-6)
+            return ArmInput(self._hourly("causal", t, x=ctx / scale), scale, "causal", [])
+
+        if arm in ("ch4_control_context_only", "ch4_boundary_leak"):
+            tok = self.toks["unconstrained"]
+            head = [tok.quantize_scale(self.ev[t])] if self.use_scale_tokens else []
+            if arm == "ch4_control_context_only":
+                return ArmInput(head + tok.encode(self.xn[t - C:t]), float(self.ev[t]), "unconstrained", [])
+            stream = tok.encode(self.xn[t - C:t + H])
+            kept, covered = [], 0
+            for tid in stream:
+                if covered >= C:
                     break
-                    
-        elif channel == "channel_5_fft_leak":
-            # Centered FFT window [origin_t - 6, origin_t + 6]
-            scale = float(ewma_vol[origin_t])
-            norm_ctx = raw_context / max(scale, 1e-6)
-            tokens = self.causal_tok.encode(norm_ctx, include_scale_tokens=False)
-            # Future FFT energy leaked into scale factor
-            centered_window = returns[origin_t - 6 : origin_t + 6]
-            fft_energy = float(np.sum(np.abs(np.fft.rfft(centered_window)) ** 2))
-            scale = scale * (1.0 + 0.5 * fft_energy)
-            
-        elif channel == "positive_control":
-            # Deliberately gross leak: scale is proportional to true future RV!
-            true_future_rv = float(np.sum(returns[origin_t : origin_t + horizon] ** 2))
-            leaked_scale = float(np.sqrt(true_future_rv / horizon))
-            norm_ctx = raw_context / max(leaked_scale, 1e-6)
-            tokens = self.causal_tok.encode(norm_ctx, include_scale_tokens=False)
-            scale = leaked_scale
-            
-        else:
-            raise ValueError(f"Unknown channel: {channel}")
-            
-        return np.array(tokens, dtype=np.int64), scale
+                kept.append(tid)
+                covered += len(tok.expand(tid))
+            overhang = covered - C
+            known = list(tok.expand(kept[-1])[-overhang:]) if overhang > 0 else []
+            return ArmInput(head + kept, float(self.ev[t]), "unconstrained", known)
 
-if __name__ == "__main__":
-    from simulation.garch_simulator import GARCHSimulator
-    sim = GARCHSimulator()
-    ret, sig = sim.simulate(n_steps=5000)
-    ewma = np.sqrt(sig)
-    
-    mgr = LeakageManager(num_bins=16, num_merges=32)
-    mgr.fit_reference(ret[:2500], ewma[:2500])
-    mgr.fit_leaked_tables(ret, ewma)
-    
-    for ch in ["reference", "channel_1_norm_leak", "channel_4_boundary_leak", "positive_control"]:
-        toks, sc = mgr.extract_features(ret, ewma, origin_t=3000, channel=ch)
-        print(f"Channel: {ch:25s} Tokens len: {len(toks)} Scale: {sc:.6f}")
-
+        raise ValueError(f"unknown arm {arm}")

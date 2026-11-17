@@ -14,6 +14,10 @@ import matplotlib.patches as patches
 import matplotlib.image as mpimg
 
 def render_slide(output_png: str = "presentation/midterm_report_slide.png"):
+    # The numbers and claims in this slide come from the pre-fix pipeline (see FIXES.md):
+    # the Channel 4 gain, the GARCH-vs-HAR gap and the 84% boundary figure were bugs.
+    # Rebuild the slide from the re-run results instead of regenerating this one.
+    raise SystemExit("Stale midterm slide script: re-run the experiments and rebuild the slide (see FIXES.md).")
     fig = plt.figure(figsize=(16, 9), dpi=300)
     fig.patch.set_facecolor("#F8FAFC")
     ax = fig.add_axes([0, 0, 1, 1])

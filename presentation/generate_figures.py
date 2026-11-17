@@ -90,152 +90,115 @@ def plot_pipeline_diagram(save_path: str = "results/figures/pipeline_leak_switch
     plt.close()
     print(f"Saved pipeline diagram to {save_path}")
 
-def plot_boundary_mismatch_figure(save_path: str = "results/figures/boundary_mismatch_and_compression.png"):
-    """
-    Plots the boundary mismatch comparison and BPE compression curve.
-    """
-    with open("results/boundary_mismatch_results.json", "r") as f:
-        data = json.load(f)
-        
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
-    
-    # Left: Mismatch & Straddling Rate Bar Chart
-    labels = ["UniTok\nHard Boundaries\n(Causal Ref)", "Götz BPE\nUnconstrained\n(Leak Channel 4)"]
-    mismatch_rates = [
-        data["mismatch_evaluation"]["mismatch_rate_with_boundaries"] * 100.0,
-        data["mismatch_evaluation"]["mismatch_rate_without_boundaries"] * 100.0
-    ]
-    colors = ["#2E7D32", "#C62828"]
-    bars = ax1.bar(labels, mismatch_rates, color=colors, width=0.48, edgecolor="black", linewidth=1.2)
-    ax1.set_ylabel("Boundary Mismatch Rate (%)", fontweight="bold")
-    ax1.set_ylim(0, 100)
-    ax1.set_title("Look-Ahead Token Boundary Mismatch\n(Evaluated over 300 Forecast Origins)", fontweight="bold", fontsize=11)
-    
+def _load(path):
+    if not os.path.exists(path):
+        print(f"Skipping: {path} not found (run the matching experiment first)")
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def _bar_labels(ax, bars, fmt):
     for bar in bars:
         h = bar.get_height()
-        ax1.annotate(f"{h:.1f}%", xy=(bar.get_x() + bar.get_width() / 2, h),
-                     xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
-                     fontweight="bold", fontsize=11, color="black")
-                     
-    ax1.axhline(0, color="gray", lw=1)
-    
-    # Right: Compression Curve
-    comp_curve = data["compression_curve"]
-    merges = [c["num_merges"] for c in comp_curve]
-    ratios = [c["compression_ratio"] for c in comp_curve]
-    
-    ax2.plot(merges, ratios, marker="o", color="#1565C0", lw=2.2, markersize=7, label="Hour-Constrained BPE")
-    ax2.set_xlabel("Number of BPE Merges", fontweight="bold")
-    ax2.set_ylabel("Compression Ratio (x)", fontweight="bold")
-    ax2.set_title("Sequence Compression vs BPE Vocabulary\n(100h BTCUSDT Benchmark)", fontweight="bold", fontsize=11)
-    ax2.grid(True, linestyle="--", alpha=0.6)
-    
-    for x, y in zip(merges, ratios):
-        ax2.annotate(f"{y:.2f}x", xy=(x, y), xytext=(0, 6), textcoords="offset points",
-                     ha="center", fontsize=9, fontweight="bold", color="#0D47A1")
-                     
+        ax.annotate(fmt.format(h), xy=(bar.get_x() + bar.get_width() / 2, h), xytext=(0, 3),
+                    textcoords="offset points", ha="center", va="bottom", fontsize=9)
+
+
+def plot_boundary_mismatch_figure(save_path: str = "results/figures/boundary_mismatch_and_compression.png"):
+    """Slice-vs-prefix mismatch (hour-aligned and off-hour origins), future-perturbation
+    sensitivity, and compression vs merge count."""
+    data = _load("results/boundary_mismatch_results.json")
+    if data is None:
+        return
+    names = list(data["variants"])
+    short = ["Hour bounds\nno gate", "Hour bounds\ncausal gate\n(reference)",
+             "Hour bounds\ncentered gate\n(Ch5)", "Unconstrained\nBPE (Ch4)"][:len(names)]
+    aligned = [100 * data["variants"][n]["slice_vs_prefix_hour_aligned"]["mismatch_rate"] for n in names]
+    off = [100 * data["variants"][n]["slice_vs_prefix_off_hour"]["mismatch_rate"] for n in names]
+    pert = [100 * data["variants"][n]["future_perturbation_hour_aligned"]["prefix_changed_rate"] for n in names]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2), gridspec_kw={"width_ratios": [1.6, 1]})
+    x = np.arange(len(names))
+    w = 0.26
+    b1 = ax1.bar(x - w, aligned, w, label="Slice vs prefix, hour-aligned origin", color="#2E7D32")
+    b2 = ax1.bar(x, off, w, label="Slice vs prefix, origin 5 bars past hour", color="#F9A825")
+    b3 = ax1.bar(x + w, pert, w, label="Future perturbation changes prefix", color="#C62828")
+    for b in (b1, b2, b3):
+        _bar_labels(ax1, b, "{:.0f}%")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(short, fontsize=9)
+    ax1.set_ylabel("Origins affected (%)")
+    ax1.set_ylim(0, 100)
+    ax1.set_title(f"Token-level causality tests ({data['n_origins']} test origins)", fontweight="bold", fontsize=11)
+    ax1.legend(fontsize=8, loc="upper left")
+
+    curve = data["compression_curve"]
+    ks = [c["num_merges"] for c in curve]
+    rs = [c["compression_ratio"] for c in curve]
+    ax2.plot(ks, rs, marker="o", color="#1565C0", lw=2)
+    for k, r in zip(ks, rs):
+        ax2.annotate(f"{r:.2f}x", (k, r), xytext=(0, 6), textcoords="offset points", ha="center", fontsize=9)
+    ax2.set_xlabel("BPE merges")
+    ax2.set_ylabel("Bars per token")
+    ax2.set_title("Compression on normalized returns\n(hour-bounded, first 30 test days)", fontweight="bold", fontsize=11)
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
-    print(f"Saved boundary mismatch figure to {save_path}")
+    print(f"Saved {save_path}")
+
 
 def plot_oracle_floor_figure(save_path: str = "results/figures/negative_control_oracle_floor.png"):
-    """
-    Plots the negative control benchmark: Baseline vs Oracle QLIKE Floor.
-    """
-    with open("results/negative_control_results.json", "r") as f:
-        data = json.load(f)
-        
-    fig, ax = plt.subplots(figsize=(7.5, 4.2))
-    
-    models = ["Oracle Floor\n(Theoretical Min)", "GARCH(1,1)\n(Causal)", "HAR-RV\n(Causal)", "Gross Leak\n(Positive Control)"]
-    qlikes = [
-        data["oracle_floor_qlike"],
-        data["garch_qlike"],
-        data["har_qlike"],
-        data["positive_control_gross_leak_qlike"]
-    ]
-    colors = ["#1565C0", "#2E7D32", "#F57F17", "#C62828"]
-    
-    bars = ax.bar(models, qlikes, color=colors, width=0.52, edgecolor="black", linewidth=1.2)
-    ax.axhline(data["oracle_floor_qlike"], color="#1565C0", linestyle="--", lw=1.8, label=f"Oracle Floor ({data['oracle_floor_qlike']:.4f})")
-    
-    ax.set_ylabel("QLIKE Loss (Lower is Better)", fontweight="bold")
-    ax.set_title("Negative Control: GARCH(1,1) Synthetic Benchmark\n(No Leak-Free Model Can Beat the Oracle Floor)", fontweight="bold", fontsize=11)
-    ax.legend(loc="upper right", frameon=True)
-    
-    for bar in bars:
-        h = bar.get_height()
-        ax.annotate(f"{h:.4f}", xy=(bar.get_x() + bar.get_width() / 2, h),
-                     xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
-                     fontweight="bold", fontsize=9.5)
-                     
-    ax.set_ylim(0, max(qlikes) * 1.15)
+    """Every arm's QLIKE on simulated GARCH data against the analytic oracle floor."""
+    data = _load("results/negative_control_results.json")
+    if data is None or "heads" not in data:
+        return
+    head = data["heads"]["direct"]
+    floor = data["baselines"]["oracle"]["QLIKE"]
+    arms = list(head["arms"])
+    q = [head["arms"][a]["QLIKE"] for a in arms]
+    viol = [data["beats_oracle_floor"]["direct"][a]["violates_floor"] for a in arms]
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+    bars = ax.bar(arms, q, color=["#C62828" if v else "#78909C" for v in viol], edgecolor="black", lw=0.8)
+    ax.axhline(floor, color="#1565C0", ls="--", lw=1.8, label=f"Oracle floor {floor:.4f}")
+    _bar_labels(ax, bars, "{:.3f}")
+    ax.set_ylabel("QLIKE (direct head)")
+    ax.set_title("Negative control on simulated GARCH(1,1): red = significantly below the oracle floor",
+                 fontweight="bold", fontsize=11)
+    plt.xticks(rotation=25, ha="right", fontsize=9)
+    ax.legend()
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
-    print(f"Saved oracle floor figure to {save_path}")
+    print(f"Saved {save_path}")
+
 
 def plot_leakage_inflation_figure(save_path: str = "results/figures/leakage_inflation_comparison.png"):
-    """
-    Plots the Look-Ahead Inflation Summary across Channels.
-    """
-    json_path = "results/leakage_inflation_table.json"
-    if not os.path.exists(json_path):
-        print(f"Waiting for {json_path}...")
+    """Inflation of each leak arm relative to its matched control, with Holm significance."""
+    data = _load("results/leakage_inflation_table.json")
+    if data is None or "heads" not in data:
         return
-        
-    with open(json_path, "r") as f:
-        data = json.load(f)
-        
-    ch_data = data["channel_results"]
-    names = [
-        "HAR-RV Baseline",
-        "Causal Reference",
-        "Ch 1: Norm Leak",
-        "Ch 2: Merge Leak",
-        "Ch 3: Decode Leak",
-        "Ch 4: Boundary Leak",
-        "Ch 5: FFT Leak",
-        "Positive Control"
-    ]
-    
-    qlikes = [
-        data["har_rv_qlike"],
-        ch_data["reference"]["QLIKE"],
-        ch_data["channel_1_norm_leak"]["QLIKE"],
-        ch_data["channel_2_merge_leak"]["QLIKE"],
-        ch_data["channel_3_decode_leak"]["QLIKE"],
-        ch_data["channel_4_boundary_leak"]["QLIKE"],
-        ch_data["channel_5_fft_leak"]["QLIKE"],
-        ch_data["positive_control"]["QLIKE"]
-    ]
-    
-    colors = ["#78909C", "#2E7D32", "#E53935", "#FB8C00", "#8E24AA", "#D81B60", "#F4511E", "#B71C1C"]
-    
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    bars = ax.bar(names, qlikes, color=colors, width=0.55, edgecolor="black", linewidth=1.1)
-    
-    # Reference baseline line
-    ref_q = ch_data["reference"]["QLIKE"]
-    ax.axhline(ref_q, color="#2E7D32", linestyle=":", lw=1.8, label=f"Causal Reference QLIKE ({ref_q:.4f})")
-    
-    ax.set_ylabel("Out-of-Sample QLIKE (Fold 1 Test)", fontweight="bold")
-    ax.set_title("Per-Channel Look-Ahead Bias Audit on BTCUSDT Realized Volatility\n(Preliminary Fold 1 Single-Seed Results)", fontweight="bold", fontsize=11.5)
-    plt.xticks(rotation=25, ha="right", fontsize=9.5, fontweight="bold")
-    ax.legend(loc="upper right", frameon=True)
-    
-    for bar in bars:
-        h = bar.get_height()
-        ax.annotate(f"{h:.4f}", xy=(bar.get_x() + bar.get_width() / 2, h),
-                     xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
-                     fontweight="bold", fontsize=9)
-                     
-    ax.set_ylim(0, max(qlikes) * 1.15)
+    heads = [h for h in ("direct", "generative") if h in data["heads"]]
+    fig, axes = plt.subplots(1, len(heads), figsize=(6 * len(heads), 4.2), squeeze=False)
+    for ax, head in zip(axes[0], heads):
+        lt = data["heads"][head]["leak_tests"]
+        arms = list(lt)
+        inf = [lt[a]["inflation_pct"] for a in arms]
+        sig = [lt[a].get("significant_holm", False) for a in arms]
+        bars = ax.bar([a.replace("_", "\n", 1) for a in arms], inf,
+                      color=["#C62828" if s else "#B0BEC5" for s in sig], edgecolor="black", lw=0.8)
+        _bar_labels(ax, bars, "{:+.1f}%")
+        ax.axhline(0, color="black", lw=0.8)
+        ax.set_ylabel("QLIKE reduction vs matched control (%)")
+        ax.set_title(f"{head} head (red = significant after Holm)", fontweight="bold", fontsize=11)
+        ax.tick_params(axis="x", labelsize=8)
+    fig.suptitle(f"Fold {data.get('fold')}: look-ahead inflation per channel, seeds {data.get('seeds')}",
+                 fontweight="bold")
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
-    print(f"Saved leakage inflation figure to {save_path}")
+    print(f"Saved {save_path}")
+
 
 if __name__ == "__main__":
     plot_pipeline_diagram()

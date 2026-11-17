@@ -1,48 +1,97 @@
 {
-  "mismatch_evaluation": {
-    "total_origins_evaluated": 300,
-    "mismatches_with_boundaries": 0,
-    "mismatch_rate_with_boundaries": 0.0,
-    "mismatches_without_boundaries": 252,
-    "mismatch_rate_without_boundaries": 0.84,
-    "straddling_boundary_rate": 0.84
+  "fold": 1,
+  "n_origins": 500,
+  "variants": {
+    "hour_boundaries_no_gate": {
+      "slice_vs_prefix_hour_aligned": {
+        "origins": 500,
+        "mismatch_rate": 0.0,
+        "straddle_rate": 0.0
+      },
+      "slice_vs_prefix_off_hour": {
+        "origins": 500,
+        "mismatch_rate": 0.356,
+        "straddle_rate": 0.356
+      },
+      "future_perturbation_hour_aligned": {
+        "origins": 200,
+        "prefix_changed_rate": 0.0
+      }
+    },
+    "hour_boundaries_causal_gate (reference)": {
+      "slice_vs_prefix_hour_aligned": {
+        "origins": 500,
+        "mismatch_rate": 0.0,
+        "straddle_rate": 0.0
+      },
+      "slice_vs_prefix_off_hour": {
+        "origins": 500,
+        "mismatch_rate": 0.31,
+        "straddle_rate": 0.31
+      },
+      "future_perturbation_hour_aligned": {
+        "origins": 200,
+        "prefix_changed_rate": 0.0
+      }
+    },
+    "hour_boundaries_centered_gate (ch5)": {
+      "slice_vs_prefix_hour_aligned": {
+        "origins": 500,
+        "mismatch_rate": 0.0,
+        "straddle_rate": 0.0
+      },
+      "slice_vs_prefix_off_hour": {
+        "origins": 500,
+        "mismatch_rate": 0.304,
+        "straddle_rate": 0.304
+      },
+      "future_perturbation_hour_aligned": {
+        "origins": 200,
+        "prefix_changed_rate": 0.57
+      }
+    },
+    "unconstrained_bpe (ch4)": {
+      "slice_vs_prefix_hour_aligned": {
+        "origins": 500,
+        "mismatch_rate": 0.32,
+        "straddle_rate": 0.32
+      },
+      "slice_vs_prefix_off_hour": {
+        "origins": 500,
+        "mismatch_rate": 0.34,
+        "straddle_rate": 0.34
+      },
+      "future_perturbation_hour_aligned": {
+        "origins": 200,
+        "prefix_changed_rate": 0.295
+      }
+    }
   },
   "compression_curve": [
     {
       "num_merges": 16,
       "vocab_size": 64,
-      "encoded_tokens": 412,
-      "compression_ratio": 2.912621359223301
+      "compression_ratio": 1.1381899617968647
     },
     {
       "num_merges": 32,
       "vocab_size": 80,
-      "encoded_tokens": 343,
-      "compression_ratio": 3.498542274052478
+      "compression_ratio": 1.2489158716392021
     },
     {
       "num_merges": 64,
       "vocab_size": 112,
-      "encoded_tokens": 301,
-      "compression_ratio": 3.9867109634551494
+      "compression_ratio": 1.3955742206428687
     },
     {
       "num_merges": 96,
       "vocab_size": 144,
-      "encoded_tokens": 283,
-      "compression_ratio": 4.240282685512367
+      "compression_ratio": 1.476923076923077
     },
     {
       "num_merges": 128,
       "vocab_size": 176,
-      "encoded_tokens": 258,
-      "compression_ratio": 4.651162790697675
+      "compression_ratio": 1.5387355298308103
     }
-  ],
-  "perturbation_test": {
-    "origin_t": 144,
-    "is_prefix_invariant": true,
-    "full_stream_prefix_corrupted": false,
-    "max_prefix_diff": 0.0
-  }
+  ]
 }
