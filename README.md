@@ -125,6 +125,21 @@ Its steps:
 Each leak-audit run also saves per-origin forecasts to `results/losses/*.npz`, so every table can
 be recomputed without retraining.
 
+## Exploratory extensions (folds only)
+
+```bash
+python experiments/run_extensions.py      # dose-response, token healing, cross-asset (ETH), extra seeds
+```
+
+It writes:
+
+- `results/robust_stats_h12.md`: equivalence bounds, random-effects pooling across folds and a
+  Model Confidence Set;
+- `results/figures/extensions_h12.png`;
+- per-run forecasts in `results/losses/fold_<k>_h12_<part>.npz`.
+
+It never touches the 2025 holdout. See `FIXES.md` (20 Nov) for the design of each part.
+
 ## Holdout
 
 The 2025 data is scored once, by `experiments/run_holdout.py`, which trains on 2021–2024 and tests on 2025:

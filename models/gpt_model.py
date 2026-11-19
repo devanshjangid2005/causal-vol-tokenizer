@@ -73,11 +73,19 @@ def pad_left(seqs: Sequence[Sequence[int]], max_len: int, pad_id: int) -> torch.
 def generative_rv(model: TimeSeriesGPT, seqs: List[List[int]], last_bins: List[int],
                   known_future: List[List[int]], token_len: np.ndarray, token_bins: List[tuple],
                   cond_m2: np.ndarray, horizon: int, n_samples: int = 8, temperature: float = 1.0,
-                  batch_size: int = 512, device: str = "cpu", seed: int = 0) -> np.ndarray:
+                  batch_size: int = 512, device: str = "cpu", seed: int = 0,
+                  heal_bins: Optional[List[List[int]]] = None) -> np.ndarray:
     """
     Returns, per sequence, the mean over samples of sum_{k<H} E[x_{t+k}^2 | bins] in
     normalized units (multiply by scale^2 outside). token_len/token_bins describe the
     tokenizer whose decoding tables are being used.
+
+    Token healing (heal_bins): the caller has dropped the final, possibly partial, token of the
+    context and passes its bins here. Until those bins are re-produced, sampling is restricted to
+    tokens whose bins are prefix-compatible with the remaining ones (the dropped token itself is
+    always allowed). Re-produced bins are past data and are not counted; any bins of the same
+    token beyond them are the first forecast bins. This is the standard token-healing heuristic
+    (see Phan et al. 2024/2025 for the exact, more expensive correction).
     """
     g = torch.Generator(device="cpu").manual_seed(seed)
     model.eval()
@@ -88,26 +96,50 @@ def generative_rv(model: TimeSeriesGPT, seqs: List[List[int]], last_bins: List[i
     vocab_ok[model.pad_id] = False
     # tokens that cover no bars but are not scale tokens (unused ids) are also blocked
     rep = [i for i in range(len(seqs)) for _ in range(n_samples)]
+    mask_cache = {}
+
+    def compatible(need: tuple) -> torch.Tensor:
+        m = mask_cache.get(need)
+        if m is None:
+            m = vocab_ok.clone()
+            for tid in range(len(token_bins)):
+                tb = token_bins[tid]
+                if not tb or tuple(tb[:len(need)]) != need[:len(tb)]:
+                    m[tid] = False
+            mask_cache[need] = m
+        return m
+
     for b0 in range(0, len(rep), batch_size):
         idx = rep[b0:b0 + batch_size]
         ids = pad_left([seqs[i] for i in idx], L, model.pad_id).to(device)
         acc = np.zeros(len(idx))
         done = np.zeros(len(idx), dtype=np.int64)
         prev = np.array([last_bins[i] for i in idx], dtype=np.int64)
+        need = [tuple(heal_bins[i]) if heal_bins else () for i in idx]
         for j, i in enumerate(idx):  # bars already known inside the input (ch4 leak)
             for b in known_future[i][:horizon]:
                 acc[j] += cond_m2[b, prev[j]]
                 prev[j] = b
                 done[j] += 1
-        for _ in range(3 * horizon):
+        for _ in range(3 * horizon + 8):
             if (done >= horizon).all():
                 break
             logits, _ = model(ids)
             logits = logits[:, -1, :].float().cpu() / max(temperature, 1e-4)
             logits[:, ~vocab_ok] = float("-inf")
+            for j in range(len(idx)):
+                if need[j]:
+                    logits[j, ~compatible(need[j])] = float("-inf")
             nxt = torch.multinomial(F.softmax(logits, dim=-1), 1, generator=g).squeeze(1).numpy()
             for j, tid in enumerate(nxt):
-                for b in token_bins[tid]:
+                bins = token_bins[tid]
+                if need[j]:
+                    m = min(len(bins), len(need[j]))
+                    for b in bins[:m]:      # re-produced past bins: condition only
+                        prev[j] = b
+                    need[j] = need[j][m:]
+                    bins = bins[m:]
+                for b in bins:
                     if done[j] >= horizon:
                         break
                     acc[j] += cond_m2[b, prev[j]]

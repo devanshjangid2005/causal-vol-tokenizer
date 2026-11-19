@@ -60,7 +60,7 @@ def _synthetic_fold(n_train: int, n_test: int, seed: int = 42) -> Tuple[pd.DataF
 
 
 def load_fold(fold_idx: int = 1, synthetic: bool = False, save_dir: str = "data/processed",
-              n_train_synth: int = 105_120, n_test_synth: int = 25_920, seed: int = 42):
+              n_train_synth: int = 105_120, n_test_synth: int = 25_920, seed: int = 42, symbol: str = "BTCUSDT"):
     """
     Returns (df, split) where df is contiguous and df.iloc[split] is the first test bar.
     With synthetic=True returns (df, split, garch_params) using simulated GARCH returns.
@@ -69,7 +69,8 @@ def load_fold(fold_idx: int = 1, synthetic: bool = False, save_dir: str = "data/
         return _synthetic_fold(n_train_synth, n_test_synth, seed=seed)
 
     spec = FOLDS_SPEC[fold_idx - 1]
-    return load_spec(spec, f"fold_{fold_idx}_full.parquet", save_dir)
+    cache = f"fold_{fold_idx}_full.parquet" if symbol == "BTCUSDT" else f"fold_{fold_idx}_{symbol}_full.parquet"
+    return load_spec(spec, cache, save_dir, symbol=symbol)
 
 
 def load_holdout(save_dir: str = "data/processed"):
@@ -77,7 +78,7 @@ def load_holdout(save_dir: str = "data/processed"):
     return load_spec(HOLDOUT_SPEC, "holdout_full.parquet", save_dir)
 
 
-def load_spec(spec: dict, cache_name: str, save_dir: str = "data/processed"):
+def load_spec(spec: dict, cache_name: str, save_dir: str = "data/processed", symbol: str = "BTCUSDT"):
     from data.download_binance import download_range
     os.makedirs(save_dir, exist_ok=True)
     cache = os.path.join(save_dir, cache_name)
@@ -91,7 +92,7 @@ def load_spec(spec: dict, cache_name: str, save_dir: str = "data/processed"):
         # download_range reuses any monthly CSVs already in data/raw
         print(f"Loading raw data for {spec['name']}...")
         raw = download_range(spec["train_start"][0], spec["train_start"][1],
-                             spec["test_end"][0], spec["test_end"][1])
+                             spec["test_end"][0], spec["test_end"][1], symbol=symbol)
         df = build_dataset(raw)
         try:
             df.to_parquet(cache)

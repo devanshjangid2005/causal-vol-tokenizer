@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import copy
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from tokenization.bpe_tokenizer import TimeSeriesBPETokenizer
@@ -51,7 +51,23 @@ ARMS: Dict[str, dict] = {
     "ch4_boundary_leak":        {"label": "Ch4: tokenize stream, then split", "control": "ch4_control_context_only"},
     "ch5_noncausal_fft_leak":   {"label": "Ch5: centered (non-causal) gate FFT", "control": "reference"},
     "positive_control":         {"label": "Positive control: true future RV norm", "control": "reference"},
+    # ---- extensions (exploratory, folds only; see experiments/run_extensions.py)
+    "ch1_leak_k1":              {"label": "Ch1 dose: window includes 1 future bar",  "control": "ch1_control_window"},
+    "ch1_leak_k3":              {"label": "Ch1 dose: window includes 3 future bars", "control": "ch1_control_window"},
+    "ch1_leak_k6":              {"label": "Ch1 dose: window includes 6 future bars", "control": "ch1_control_window"},
+    "ext_ch4_control":          {"label": "Unconstrained BPE, context only (healing run)", "control": None},
+    "ext_ch4_healed":           {"label": "Unconstrained BPE + token healing", "control": "ext_ch4_control"},
+    "xa_control":               {"label": "BTC + ETH up to the split", "control": "reference"},
+    "xa_leak":                  {"label": "BTC + ETH through the test period", "control": "xa_control"},
 }
+
+# the nine arms of the main study (the default for every runner); extension arms are opt-in
+ORIGINAL_ARMS = ["reference", "ch1_control_window", "ch1_window_norm_leak", "ch2_merge_table_leak",
+                 "ch3_decode_table_leak", "ch4_control_context_only", "ch4_boundary_leak",
+                 "ch5_noncausal_fft_leak", "positive_control"]
+
+# arms whose forecasts come from another arm's trained model (inference-time change only)
+PAIRED_INFERENCE = {"ext_ch4_control": ["ext_ch4_healed"]}
 
 
 @dataclass
@@ -60,6 +76,7 @@ class ArmInput:
     scale: float              # forecasts are made for RV / scale^2 and rescaled by scale^2
     decode_tok_name: str      # which tokenizer's tables decode generated tokens
     known_future: List[int]   # base bins of post-origin bars already inside the input (ch4 leak only)
+    heal_bins: List[int] = field(default_factory=list)  # bins of a dropped final token (token healing)
 
 
 class LeakageManager:
@@ -153,28 +170,36 @@ class LeakageManager:
     def extract(self, t: int, arm: str) -> ArmInput:
         C, H, r = self.C, self.H, self.r
         assert t - C >= 0 and t + H <= len(r)
-        if arm in ("reference", "ch2_merge_table_leak", "ch3_decode_table_leak", "ch5_noncausal_fft_leak"):
+        if arm in ("reference", "ch2_merge_table_leak", "ch3_decode_table_leak", "ch5_noncausal_fft_leak",
+                   "xa_control", "xa_leak"):  # cross-asset arms differ only in their TRAINING data
             tok_name = "merge_leaked" if arm == "ch2_merge_table_leak" else "causal"
             toks = self._hourly(tok_name, t, centered_gate=(arm == "ch5_noncausal_fft_leak"))
             dec = {"ch2_merge_table_leak": "merge_leaked", "ch3_decode_table_leak": "decode_leaked"}.get(arm, "causal")
             return ArmInput(toks, float(self.ev[t]), dec, [])
 
-        if arm in ("ch1_control_window", "ch1_window_norm_leak", "positive_control"):
+        if arm in ("ch1_control_window", "ch1_window_norm_leak", "positive_control") or arm.startswith("ch1_leak_k"):
             ctx = r[t - C:t]
             if arm == "ch1_control_window":
                 scale = float(np.std(ctx))
             elif arm == "ch1_window_norm_leak":
                 scale = float(np.std(r[t - C:t + H]))
+            elif arm.startswith("ch1_leak_k"):  # off-by-k: the window reaches k bars past the origin
+                k = int(arm[len("ch1_leak_k"):])
+                scale = float(np.std(r[t - C:t + k]))
             else:
                 scale = float(np.sqrt(np.sum(r[t:t + H] ** 2) / H))
             scale = max(scale, 1e-6)
             return ArmInput(self._hourly("causal", t, x=ctx / scale), scale, "causal", [])
 
-        if arm in ("ch4_control_context_only", "ch4_boundary_leak"):
+        if arm in ("ch4_control_context_only", "ch4_boundary_leak", "ext_ch4_control", "ext_ch4_healed"):
             tok = self.toks["unconstrained"]
             head = [tok.quantize_scale(self.ev[t])] if self.use_scale_tokens else []
-            if arm == "ch4_control_context_only":
+            if arm in ("ch4_control_context_only", "ext_ch4_control"):
                 return ArmInput(head + tok.encode(self.xn[t - C:t]), float(self.ev[t]), "unconstrained", [])
+            if arm == "ext_ch4_healed":
+                # token healing: drop the final (possibly partial) token; generation must re-produce its bins
+                enc = tok.encode(self.xn[t - C:t])
+                return ArmInput(head + enc[:-1], float(self.ev[t]), "unconstrained", [], list(tok.expand(enc[-1])))
             stream = tok.encode(self.xn[t - C:t + H])
             kept, covered = [], 0
             for tid in stream:

@@ -272,7 +272,103 @@ def plot_multifold_inflation(horizon: int = 12, save_path: str = None):
     print(f"Saved {save_path}")
 
 
+def plot_extensions(results_dir: str = "results", horizon: int = 12):
+    """Exploratory extensions (folds only): Ch1 dose-response, cross-asset leakage, token healing.
+    Bars/points = pooled inflation vs the matched control, whiskers = 90% block-bootstrap CI,
+    orange = significant after Holm within the family."""
+    path = os.path.join(results_dir, f"robust_stats_h{horizon}.json")
+    if not os.path.exists(path):
+        print(f"Skipping extensions figure: {path} not found")
+        return
+    with open(path) as f:
+        rep = json.load(f)
+    comps = rep["comparisons"]
+
+    def rows(fam, head=None):
+        return [r for r in comps.get(fam, []) if head is None or r["head"] == head]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.4), gridspec_kw={"width_ratios": [1.1, 1.2, 1]})
+    # A: dose-response
+    ax = axes[0]
+    dose = {int(r["arm"].split("_k")[1]) if "_k" in r["arm"] else 12: r
+            for r in rows("Extension: Ch1 dose-response (future bars in the window)", "direct")}
+    if len(dose) > 1:
+        ks = [0] + sorted(dose)
+        ys = [0.0] + [dose[k]["inflation_pct"] for k in sorted(dose)]
+        lo = [0.0] + [max(0.0, dose[k]["inflation_pct"] - dose[k]["ci90"][0]) for k in sorted(dose)]
+        hi = [0.0] + [max(0.0, dose[k]["ci90"][1] - dose[k]["inflation_pct"]) for k in sorted(dose)]
+        ax.errorbar(ks, ys, yerr=[lo, hi], color=INK, lw=2, capsize=3, zorder=2)
+        sig = [False] + [bool(dose[k].get("significant_holm")) for k in sorted(dose)]
+        ax.scatter(ks, ys, s=60, zorder=3, edgecolor="white", linewidth=1.5,
+                   color=[SIG if q else NONSIG for q in sig])
+        for k, y in zip(ks[1:], ys[1:]):
+            ax.annotate(f"{y:+.0f}%", (k, y), xytext=(7, -4), textcoords="offset points", fontsize=9, color=INK)
+        ax.set_xticks(ks)
+    else:
+        ax.text(0.5, 0.5, "dose-response not run", ha="center", va="center", transform=ax.transAxes, color=INK)
+    ax.set_xlabel("Future bars inside the normalization window (k)")
+    ax.set_ylabel("QLIKE reduction vs causal window (%)")
+    ax.set_title("A. Off-by-k normalization leak (direct head)", loc="left", fontsize=11, fontweight="bold")
+
+    def bars(ax, items, title):
+        if not items:
+            ax.text(0.5, 0.5, "not run", ha="center", va="center", transform=ax.transAxes, color=INK)
+            ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
+            return
+        x = np.arange(len(items))
+        vals = [r["inflation_pct"] for _, r in items]
+        err = [[max(0.0, r["inflation_pct"] - r["ci90"][0]) for _, r in items],
+               [max(0.0, r["ci90"][1] - r["inflation_pct"]) for _, r in items]]
+        ax.bar(x, vals, width=0.6, color=[SIG if r.get("significant_holm") else NONSIG for _, r in items],
+               edgecolor="white", linewidth=2)
+        ax.errorbar(x, vals, yerr=err, fmt="none", ecolor=INK, capsize=3, lw=1)
+        for xi, v, (_, r) in zip(x, vals, items):  # label beyond the whisker so it never overlaps
+            ypos = max(v, r["ci90"][1]) if v >= 0 else min(v, r["ci90"][0])
+            ax.annotate(f"{v:+.1f}%", (xi, ypos), xytext=(0, 4 if v >= 0 else -12), textcoords="offset points",
+                        ha="center", fontsize=9, color=INK)
+        ax.axhline(0, color=INK, lw=0.8)
+        ax.set_xticks(x)
+        ax.set_xticklabels([lab for lab, _ in items], fontsize=8.5)
+        ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
+
+    xa = []
+    for r in rows("Extension: cross-asset leakage (ETH)"):
+        lab = ("More data\n(ETH to split vs BTC)" if r["arm"] == "xa_control" else "Leak\n(ETH through test)")
+        xa.append((f"{lab}\n{r['head']}", r))
+    bars(axes[1], xa, "B. Cross-asset leakage (ETH)")
+    axes[1].set_ylabel("QLIKE reduction vs control (%)")
+    heal_lab = {"ext_ch4_control": "Plain vs\nhour-aligned", "ext_ch4_healed": None}
+    hl = []
+    for r in rows("Extension: token healing", "generative"):
+        if r["arm"] == "ext_ch4_control":
+            hl.append(("Unconstrained vs\nhour-aligned", r))
+        elif r["control"] == "ext_ch4_control":
+            hl.append(("Healed vs\nplain", r))
+        else:
+            hl.append(("Healed vs\nhour-aligned", r))
+    bars(axes[2], hl, "C. Token healing (generative head)")
+    from matplotlib.patches import Patch
+    fig.legend(handles=[Patch(color=SIG, label="Significant (Holm, within family)"), Patch(color=NONSIG, label="Not significant"),
+                        plt.Line2D([], [], color=INK, label="90% bootstrap CI")],
+               loc="upper right", ncol=3, fontsize=9, frameon=False)
+    fig.suptitle(f"Exploratory extensions, folds {rep['folds']} (2025 holdout not used)", fontweight="bold", x=0.01, ha="left")
+    plt.tight_layout(rect=(0, 0, 1, 0.93))
+    os.makedirs(os.path.join(results_dir, "figures"), exist_ok=True)
+    out = os.path.join(results_dir, "figures", f"extensions_h{horizon}.png")
+    plt.savefig(out, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {out}")
+
+
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--results", default="results")
+    ap.add_argument("--only-extensions", action="store_true")
+    a = ap.parse_args()
+    if a.only_extensions:
+        plot_extensions(a.results)
+        raise SystemExit(0)
     plot_pipeline_diagram()
     plot_boundary_mismatch_figure()
     plot_oracle_floor_figure()
@@ -283,3 +379,5 @@ if __name__ == "__main__":
         plot_leakage_inflation_figure_from("results/holdout_h12_leak_audit.json",
                                            "results/figures/holdout_inflation_h12.png")
 
+
+    plot_extensions(a.results)

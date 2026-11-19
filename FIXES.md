@@ -171,3 +171,33 @@ Files: `tokenization/causal_gate.py`, `tokenization/bpe_tokenizer.py`,
   α 0.1049, β 0.8834; QLIKE 0.4825 unchanged). Fold 6 sits at the persistence cap, which is
   near-integrated volatility. The fitted parameters, a convergence flag and a cap flag are
   saved in `results/fold_<k>_baselines.json`. `arch` is no longer a dependency.
+
+## 20 Nov 2026: exploratory extensions (folds only)
+
+The 2025 holdout was scored once on 17 Nov and is not used by anything below. These runs use
+only the six walk-forward folds and are reported as exploratory.
+
+* **`experiments/robust_stats.py`** works from the saved forecasts, with no retraining. It adds:
+  - seed-averaged losses;
+  - 90% and 95% block-bootstrap CIs on inflation, where the 90% upper bound is the equivalence
+    bound ("inflates accuracy by at most X%");
+  - Holm correction within each family;
+  - DerSimonian–Laird random-effects pooling across folds, with I²;
+  - a Model Confidence Set (Hansen, Lunde & Nason 2011) over the leak-free forecasters.
+* **Cross-asset leakage** (`experiments/run_cross_asset.py`), after Meyer et al. (2025/26).
+  BTC + ETH training data up to the split, versus BTC + ETH through the end of the test period,
+  both evaluated on BTC. ETH is encoded with BTC's train-only tokenizer, gate and tables.
+  ETH and BTC hourly RV correlate at 0.93.
+* **Token healing** (`ext_ch4_healed`). This tests whether the unconstrained tokenizer's
+  generative-head gap is the partial-token bias of Phan et al. (2024). The final, possibly
+  partial, context token is dropped, and generation must re-produce its bins before forecasting.
+  It is paired with the plain forecast from the same trained model.
+* **Ch1 dose-response** (`ch1_leak_k1/k3/k6`): the normalization window reaches k future bars,
+  which is an off-by-k rolling-window bug.
+* **Extra seeds**: seeds 1–2 for Folds 2–6, so every fold has three seeds.
+* **Small fixes:**
+  - `data/download_binance.py` and `load_fold` take a symbol.
+  - Aggregation merges every forecast file per fold (`experiments/forecast_store.py`).
+  - `results/leakage_inflation_table.json` is now written only by the Fold 1 main run.
+    Previously every fold overwrote it, so it held Fold 6.
+* **Runner:** `experiments/run_extensions.py` runs all of this; `--smoke` gives a quick code check.

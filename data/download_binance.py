@@ -1,6 +1,7 @@
 """
 data/download_binance.py
-Downloads public 5-minute BTCUSDT klines from Binance Vision Data Archive.
+Downloads public 5-minute klines (BTCUSDT by default; any spot symbol, e.g. ETHUSDT) from the
+Binance Vision Data Archive.
 Extracts open, high, low, close, volume, and timestamp.
 """
 
@@ -14,7 +15,7 @@ import requests
 import pandas as pd
 from typing import List, Optional
 
-BASE_URL = "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/5m"
+BASE_URL = "https://data.binance.vision/data/spot/monthly/klines/{symbol}/5m"
 
 COLUMNS = [
     "open_time", "open", "high", "low", "close", "volume",
@@ -22,14 +23,14 @@ COLUMNS = [
     "taker_buy_quote_volume", "ignore"
 ]
 
-def download_month(year: int, month: int, save_dir: str = "data/raw") -> Optional[pd.DataFrame]:
+def download_month(year: int, month: int, save_dir: str = "data/raw", symbol: str = "BTCUSDT") -> Optional[pd.DataFrame]:
     """
     Downloads and parses a single month's 5m kline zip file.
     """
     os.makedirs(save_dir, exist_ok=True)
-    filename = f"BTCUSDT-5m-{year:04d}-{month:02d}.zip"
-    url = f"{BASE_URL}/{filename}"
-    local_csv = os.path.join(save_dir, f"BTCUSDT-5m-{year:04d}-{month:02d}.csv")
+    filename = f"{symbol}-5m-{year:04d}-{month:02d}.zip"
+    url = f"{BASE_URL.format(symbol=symbol)}/{filename}"
+    local_csv = os.path.join(save_dir, f"{symbol}-5m-{year:04d}-{month:02d}.csv")
     
     if os.path.exists(local_csv):
         print(f"Loading cached {os.path.basename(local_csv)}...")
@@ -67,7 +68,8 @@ def download_month(year: int, month: int, save_dir: str = "data/raw") -> Optiona
                     return df
     return None
 
-def download_range(start_year: int, start_month: int, end_year: int, end_month: int, save_dir: str = "data/raw") -> pd.DataFrame:
+def download_range(start_year: int, start_month: int, end_year: int, end_month: int, save_dir: str = "data/raw",
+                   symbol: str = "BTCUSDT") -> pd.DataFrame:
     """
     Downloads and concatenates klines across a date range.
     """
@@ -75,7 +77,7 @@ def download_range(start_year: int, start_month: int, end_year: int, end_month: 
     curr_y, curr_m = start_year, start_month
     
     while (curr_y < end_year) or (curr_y == end_year and curr_m <= end_month):
-        df_m = download_month(curr_y, curr_m, save_dir=save_dir)
+        df_m = download_month(curr_y, curr_m, save_dir=save_dir, symbol=symbol)
         if df_m is not None:
             frames.append(df_m)
             print(f"Loaded {curr_y}-{curr_m:02d}: {len(df_m)} bars")
@@ -100,8 +102,9 @@ def download_range(start_year: int, start_month: int, end_year: int, end_month: 
     return combined
 
 if __name__ == "__main__":
-    # python data/download_binance.py 2021 1 2025 12   -> caches every month in data/raw
+    # python data/download_binance.py 2021 1 2025 12 [SYMBOL]   -> caches every month in data/raw
     a = [int(x) for x in sys.argv[1:5]] if len(sys.argv) >= 5 else [2021, 1, 2025, 12]
-    df = download_range(*a)
+    sym = sys.argv[5] if len(sys.argv) >= 6 else "BTCUSDT"
+    df = download_range(*a, symbol=sym)
     print(f"Downloaded range: {df.shape}")
 

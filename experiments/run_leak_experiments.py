@@ -33,7 +33,7 @@ import torch.nn.functional as F
 
 from data.folds import load_fold, select_origins
 from data.preprocess import future_rv
-from tokenization.leak_tokenizer import LeakageManager, ARMS, ArmInput
+from tokenization.leak_tokenizer import LeakageManager, ARMS, ArmInput, PAIRED_INFERENCE, ORIGINAL_ARMS
 from models.gpt_model import TimeSeriesGPT, pad_left, generative_rv
 from models.baselines import HARRVModel, GARCH11Model
 from evaluation.metrics import qlike_loss
@@ -49,7 +49,7 @@ def parse_args(argv=None):
     ap.add_argument("--fold", type=int, default=1)
     ap.add_argument("--horizon", type=int, default=12, help="12 = next hour, 288 = next day")
     ap.add_argument("--context", type=int, default=144)
-    ap.add_argument("--arms", nargs="+", default=list(ARMS))
+    ap.add_argument("--arms", nargs="+", default=list(ORIGINAL_ARMS), choices=list(ARMS))
     ap.add_argument("--seeds", nargs="+", type=int, default=[0])
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -131,9 +131,10 @@ def predict_generative(model, inputs: List[ArmInput], mgr: LeakageManager, args,
                 lb = token_bins[tid][-1]
                 break
         last_bins.append(lb)
+    heal = [a.heal_bins for a in inputs] if any(a.heal_bins for a in inputs) else None
     m2 = generative_rv(model, [a.tokens for a in inputs], last_bins, [a.known_future for a in inputs],
                        token_len, token_bins, tok.cond_m2, args.horizon, n_samples=args.n_samples,
-                       device=device, seed=seed)
+                       device=device, seed=seed, heal_bins=heal)
     return m2 * np.array([a.scale for a in inputs]) ** 2
 
 
@@ -203,6 +204,11 @@ def run_audit(df: pd.DataFrame, split: int, args, extra_forecasts: Optional[Dict
             if not args.no_generative:
                 preds["generative"].setdefault(arm, []).append(
                     predict_generative(model, te_in, mgr, args, device, seed))
+                # inference-time variants that reuse this arm's model (e.g. token healing)
+                for pa in PAIRED_INFERENCE.get(arm, []):
+                    pa_in = [mgr.extract(int(t), pa) for t in test_o]
+                    preds["generative"].setdefault(pa, []).append(
+                        predict_generative(model, pa_in, mgr, args, device, seed))
             q = qlike_loss(y_te, preds["direct"][arm][-1]).mean()
             print(f"   seed {seed}: direct QLIKE {q:.4f}")
 
@@ -291,7 +297,8 @@ def main():
     out = args.out or f"results/fold_{args.fold}_h{args.horizon}_leak_audit.json"
     with open(out, "w") as f:
         json.dump(res, f, indent=2)
-    if args.horizon == 12 and not (args.max_train or args.max_test):  # never overwrite with smoke runs
+    # the single-fold figure table is Fold 1's main run only (it used to be overwritten by every fold)
+    if args.horizon == 12 and args.fold == 1 and args.out is None and not smoke:
         with open("results/leakage_inflation_table.json", "w") as f:
             json.dump(res, f, indent=2)
     print(f"\nSaved {out}")

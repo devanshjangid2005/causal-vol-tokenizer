@@ -34,6 +34,8 @@ import numpy as np
 from evaluation.metrics import qlike_loss
 from evaluation.hypothesis_tests import holm_bonferroni_correction, diebold_mariano_test
 from experiments.run_leak_experiments import ARMS, LEAK_ARMS, compare, summarize
+from tokenization.leak_tokenizer import ORIGINAL_ARMS
+from experiments.forecast_store import load_fold_forecasts
 
 HEADS = ("direct", "generative")
 
@@ -84,17 +86,15 @@ def main():
     ap.add_argument("--results", default="results")
     args = ap.parse_args()
 
-    paths = sorted(glob.glob(os.path.join(args.results, "losses", f"fold_*_h{args.horizon}.npz")),
-                   key=lambda p: int(re.search(r"fold_(\d+)_", p).group(1)))
-    if not paths:
+    folds = load_fold_forecasts(args.results, args.horizon)  # merges main, extra-seed and extension files
+    if not folds:
         raise SystemExit("No per-origin forecast files found; run run_leak_experiments.py first.")
-    folds = {int(re.search(r"fold_(\d+)_", p).group(1)): load_npz(p) for p in paths}
     print("Folds found:", sorted(folds))
 
     report = {"horizon": args.horizon, "seed": args.seed, "folds": sorted(folds), "heads": {}, "per_fold": {},
               "seed_robustness": {}}
     for head in HEADS:
-        arms = [a for a in ARMS if all(arm_forecast(d, head, a, args.seed) is not None for d in folds.values())]
+        arms = [a for a in ORIGINAL_ARMS if all(arm_forecast(d, head, a, args.seed) is not None for d in folds.values())]
         if not arms:
             continue
         base_names = [k[5:] for k in folds[min(folds)] if k.startswith("base/")]
@@ -139,7 +139,7 @@ def main():
             continue
         rob = {}
         for head in HEADS:
-            arms = [a for a in ARMS if all(f"fc/{head}/{a}/seed{s}" in d for s in seeds)]
+            arms = [a for a in ORIGINAL_ARMS if all(f"fc/{head}/{a}/seed{s}" in d for s in seeds)]
             if not arms:
                 continue
             rob[head] = {}
