@@ -1440,6 +1440,711 @@
           "sd": 14.58396229547813
         }
       }
+    },
+    "fold_2": {
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "direct": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            44.12536222232615,
+            63.84040034847941,
+            58.43786645233836
+          ],
+          "mean": 55.467876341047976,
+          "sd": 10.187556774064682
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.2708512092642597,
+            0.4096199693603727,
+            -1.882682235785016
+          ],
+          "mean": -0.581304491896301,
+          "sd": 1.1772630464137404
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -0.974577605753653,
+            3.3836722174814,
+            0.8013485290128541
+          ],
+          "mean": 1.0701477135802004,
+          "sd": 2.1915234727581963
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            2.2764359326616397,
+            -2.860712989548158,
+            -9.353174091034093
+          ],
+          "mean": -3.312483715973537,
+          "sd": 5.827952463580348
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            99.97173814645161,
+            99.96475167979315,
+            99.9892790711888
+          ],
+          "mean": 99.97525629914453,
+          "sd": 0.012636505883622851
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.09198860073936196,
+            -5.789974702117826,
+            -2.911972378718742
+          ],
+          "mean": -2.869986160032402,
+          "sd": 2.94120642015472
+        }
+      },
+      "generative": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            59.04091947461521,
+            56.458429980609566,
+            52.087262187262496
+          ],
+          "mean": 55.86220388082909,
+          "sd": 3.514961107755383
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            7.341710218985082,
+            16.194380767427194,
+            -1.1296985928913805
+          ],
+          "mean": 7.468797464506966,
+          "sd": 8.662738873857089
+        },
+        "ch3_decode_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.17183984852349263,
+            0.02327216053789724,
+            1.9367722479395197
+          ],
+          "mean": 0.5960681866513081,
+          "sd": 1.1651749692582747
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            2.8225103238743356,
+            4.96302932653088,
+            7.480765145959618
+          ],
+          "mean": 5.088768265454944,
+          "sd": 2.331671547933265
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -3.224161615074563,
+            10.922223329615527,
+            6.131063571790153
+          ],
+          "mean": 4.609708428777039,
+          "sd": 7.19485530460606
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            65.5493232110969,
+            86.8742280143382,
+            79.16515813875927
+          ],
+          "mean": 77.19623645473146,
+          "sd": 10.797934092464267
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -6.8264257325493505,
+            23.50363072195644,
+            -2.5129397299926217
+          ],
+          "mean": 4.721421753138157,
+          "sd": 16.4082317964134
+        }
+      }
+    },
+    "fold_3": {
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "direct": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            57.690971007985546,
+            64.24058289559976,
+            59.71190839130301
+          ],
+          "mean": 60.54782076496277,
+          "sd": 3.3538658428629
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            1.0382369817318,
+            3.400177970850562,
+            -3.172560552347036
+          ],
+          "mean": 0.42195146674510875,
+          "sd": 3.3294261968946306
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            0.8860592253747792,
+            -2.4607848751305403,
+            1.7941993555005384
+          ],
+          "mean": 0.07315790191492577,
+          "sd": 2.2409438016139256
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.2765776132839854,
+            2.1288401008643576,
+            -0.9693613264128459
+          ],
+          "mean": 0.2943003870558421,
+          "sd": 1.6260809602998325
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            99.87715625955376,
+            99.95654303656993,
+            99.97002105885826
+          ],
+          "mean": 99.93457345166064,
+          "sd": 0.0501793257555444
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.751038292918609,
+            2.170728687791858,
+            -5.195095930517129
+          ],
+          "mean": -0.7577763166022207,
+          "sd": 3.907842655654051
+        }
+      },
+      "generative": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            61.32947139420832,
+            61.20279339734274,
+            58.403945629653585
+          ],
+          "mean": 60.312070140401545,
+          "sd": 1.6536977323895479
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -13.244266998409152,
+            -3.9402942091976856,
+            -29.822554004897075
+          ],
+          "mean": -15.66903840416797,
+          "sd": 13.110395886877653
+        },
+        "ch3_decode_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.11955218213680215,
+            0.35115067391681143,
+            -0.16193014531185224
+          ],
+          "mean": 0.023222782156052352,
+          "sd": 0.2847832501863629
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -2.983446335627502,
+            -8.36767470284894,
+            5.117539554762394
+          ],
+          "mean": -2.0778604945713495,
+          "sd": 6.788064170296422
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            5.531922245049419,
+            1.9756212999335387,
+            -5.614119892216777
+          ],
+          "mean": 0.6311412175887267,
+          "sd": 5.6933543583984685
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            47.18170421960314,
+            80.71164464234278,
+            77.39320541494673
+          ],
+          "mean": 68.4288514256309,
+          "sd": 18.47522552020515
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.6182180274502412,
+            10.1362254824646,
+            -9.660564002194311
+          ],
+          "mean": 0.36462650257351,
+          "sd": 9.900830771763165
+        }
+      }
+    },
+    "fold_4": {
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "direct": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            65.5102459468216,
+            61.370203002351154,
+            63.756932751876846
+          ],
+          "mean": 63.54579390034987,
+          "sd": 2.078081713139061
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            3.1582847616461263,
+            3.8837345463802873,
+            -1.367418017374068
+          ],
+          "mean": 1.8915337635507816,
+          "sd": 2.845548168690463
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            1.3652659688921451,
+            0.27002734922562205,
+            -1.0391599129977016
+          ],
+          "mean": 0.19871113504002183,
+          "sd": 1.203798345728954
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            5.436564521105219,
+            2.643659730929143,
+            1.8250867976276517
+          ],
+          "mean": 3.301770349887338,
+          "sd": 1.8935482636792842
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            99.98966946032826,
+            99.98445185643091,
+            99.98502464528421
+          ],
+          "mean": 99.9863819873478,
+          "sd": 0.0028614036268208784
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            5.089039808686401,
+            4.794799164726643,
+            -0.1852681512774869
+          ],
+          "mean": 3.232856940711853,
+          "sd": 2.9638368287584274
+        }
+      },
+      "generative": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            66.63982520370676,
+            58.07430577351921,
+            60.15736565149601
+          ],
+          "mean": 61.623832209574,
+          "sd": 4.467093451194072
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            4.4532293322512,
+            15.678790652847749,
+            -6.860375975694988
+          ],
+          "mean": 4.4238813364679865,
+          "sd": 11.269611974506754
+        },
+        "ch3_decode_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.3183278753261043,
+            0.3069406836706142,
+            -0.43086728859739015
+          ],
+          "mean": 0.06480042346644278,
+          "sd": 0.4292985879552783
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -3.144549852716697,
+            -2.3176076480215033,
+            -6.223352688383385
+          ],
+          "mean": -3.895170063040529,
+          "sd": 2.058223531394927
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            19.332298504677688,
+            10.879332039813363,
+            -0.9218717835847935
+          ],
+          "mean": 9.763252920302085,
+          "sd": 10.173105620568405
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            79.54369573703107,
+            89.93268699078575,
+            71.59914986683674
+          ],
+          "mean": 80.35851086488452,
+          "sd": 9.193888657050307
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            18.96649328123159,
+            15.491276282066897,
+            -7.9318264687788895
+          ],
+          "mean": 8.841981031506531,
+          "sd": 14.63009729428668
+        }
+      }
+    },
+    "fold_5": {
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "direct": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            74.18695275867167,
+            71.84585747021774,
+            67.11730695234009
+          ],
+          "mean": 71.05003906040982,
+          "sd": 3.601384200940981
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            6.318205351921834,
+            -1.418736278349895,
+            -0.5538425998901304
+          ],
+          "mean": 1.448542157893936,
+          "sd": 4.239366106649956
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            2.5644936850453934,
+            2.4712852966444774,
+            0.3162165688798727
+          ],
+          "mean": 1.7839985168565813,
+          "sd": 1.271990501545432
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            5.5690244695143365,
+            3.081613989095191,
+            2.9001623623969928
+          ],
+          "mean": 3.8502669403355068,
+          "sd": 1.4912500649755367
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            99.98483705354187,
+            99.98748953059756,
+            99.99050781759524
+          ],
+          "mean": 99.98761146724489,
+          "sd": 0.0028373478191333875
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            3.6223318527922053,
+            0.7092522673218505,
+            1.7569773642062863
+          ],
+          "mean": 2.0295204947734473,
+          "sd": 1.4755398965583901
+        }
+      },
+      "generative": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            72.60604840662725,
+            66.27112003885019,
+            66.17664157091414
+          ],
+          "mean": 68.35127000546386,
+          "sd": 3.6850489789798955
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -6.56941714838139,
+            -8.584567477922523,
+            -12.688012898185333
+          ],
+          "mean": -9.280665841496415,
+          "sd": 3.118127352467728
+        },
+        "ch3_decode_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.04813698122205248,
+            1.0346949206170601,
+            0.05310080068609095
+          ],
+          "mean": 0.3465529133603662,
+          "sd": 0.5980943393268942
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -8.523883295650696,
+            6.0119891015333,
+            2.3788013128004835
+          ],
+          "mean": -0.04436429377230441,
+          "sd": 7.564832797521823
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -11.980075269685738,
+            0.041869062379547455,
+            -2.9776390466494744
+          ],
+          "mean": -4.971948417985222,
+          "sd": 6.254177706322978
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            74.16971485987175,
+            78.01927612378857,
+            69.85874924994594
+          ],
+          "mean": 74.01591341120208,
+          "sd": 4.082436879963559
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -4.170557905141983,
+            7.648344344553041,
+            -10.001810327931757
+          ],
+          "mean": -2.1746746295069,
+          "sd": 8.992755558121722
+        }
+      }
+    },
+    "fold_6": {
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "direct": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            64.47549691619135,
+            61.130032717853254,
+            60.81726397893459
+          ],
+          "mean": 62.1409312043264,
+          "sd": 2.0278323077298124
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.2641070813535572,
+            -2.1224023881477287,
+            0.1804506971317487
+          ],
+          "mean": -0.7353529241231791,
+          "sd": 1.2216126908071316
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -1.1664160458199395,
+            1.2625230811979404,
+            0.48524663948637986
+          ],
+          "mean": 0.19378455828812693,
+          "sd": 1.2404228832426092
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            3.0241397340019502,
+            0.8093828925063205,
+            0.036290011304407475
+          ],
+          "mean": 1.2899375459375593,
+          "sd": 1.5508098118585525
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            99.96857892339754,
+            99.99257875143063,
+            99.98989930120146
+          ],
+          "mean": 99.98368565867655,
+          "sd": 0.013151233838503149
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.409069805087205,
+            -3.2757542452354027,
+            1.2175051076458758
+          ],
+          "mean": -0.8224396475589106,
+          "sd": 2.274972719190844
+        }
+      },
+      "generative": {
+        "ch1_window_norm_leak": {
+          "control": "ch1_control_window",
+          "inflation_pct_per_seed": [
+            67.2380014372342,
+            60.96750945839542,
+            59.74733990720193
+          ],
+          "mean": 62.65095026761052,
+          "sd": 4.0190772893755655
+        },
+        "ch2_merge_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.5558098213433307,
+            -0.7006443429533291,
+            0.4010018083852698
+          ],
+          "mean": 0.08538909559175711,
+          "sd": 0.6851115274918855
+        },
+        "ch3_decode_table_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            0.399301079220427,
+            0.1528658257140577,
+            0.39652796810610164
+          ],
+          "mean": 0.31623162434686214,
+          "sd": 0.14148572598857312
+        },
+        "ch4_boundary_leak": {
+          "control": "ch4_control_context_only",
+          "inflation_pct_per_seed": [
+            -2.210171911243921,
+            -0.8838551687167316,
+            -0.6393725621294534
+          ],
+          "mean": -1.2444665473633687,
+          "sd": 0.8452118513140242
+        },
+        "ch5_noncausal_fft_leak": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -0.6421271498323097,
+            -17.278756727884485,
+            0.6527427437379844
+          ],
+          "mean": -5.756047044659603,
+          "sd": 9.999940041981853
+        },
+        "positive_control": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            43.46387537724905,
+            77.92953572749855,
+            68.33869916798825
+          ],
+          "mean": 63.24403675757861,
+          "sd": 17.788679677022706
+        },
+        "ch4_control_context_only": {
+          "control": "reference",
+          "inflation_pct_per_seed": [
+            -7.193496431501225,
+            -3.4491451828647848,
+            -7.901436517075731
+          ],
+          "mean": -6.181359377147246,
+          "sd": 2.3924967280583127
+        }
+      }
     }
   }
 }
