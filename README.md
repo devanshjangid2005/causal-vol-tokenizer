@@ -13,10 +13,19 @@
 * The 2025 holdout was **scored once** on 17 Nov 2026 (`results/HOLDOUT_SCORED.json`, `"rescored": false`).
 * The exploratory extensions use Folds 1–6 only: Ch1 dose-response, cross-asset ETH leakage, token healing,
   and robust statistics.
-* The final report, slide deck and video script are in the repository root and `presentation/`.
+* Deliverables:
+  * the reference report [`FINAL_REPORT.md`](FINAL_REPORT.md);
+  * the recorded video `presentation/final_video.mp4` (about 10 minutes);
+  * the 18-slide deck `presentation/final_presentation.pptx`, used for the recorded video;
+  * the video script [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md), plus a per-speaker version,
+    `presentation/PERSON_WISE_SCRIPT.pdf`;
+  * the Overleaf-ready LaTeX source of the 5-page NeurIPS 2026 report in `report/` (see `report/README.md`).
 
-The midterm headline numbers are **withdrawn** because they came from bugs: Channel 4 +16.6%, GARCH vs HAR
-−21.7%, 84% boundary mismatch, and 3.99× compression. Do not cite them.
+The numbers in the initial 15 Oct commits (`7f9f6a6`–`dea2cb5`) are **withdrawn**. They came from bugs found
+in the 15 Oct audit: Channel 4 +16.6%, GARCH −21.7% against the reference GPT (43% worse than HAR), 84% boundary mismatch, 3.99× compression, and the
+rest of that README's results table. The submitted midterm slide (15 Oct) already withdrew the first three
+and reported the corrected token audit and baselines. The fixes were committed on 17 Nov (`24d9c8f`). Do not
+cite the pre-audit numbers.
 
 ---
 
@@ -80,15 +89,57 @@ Full tables, figures and discussion are in [`FINAL_REPORT.md`](FINAL_REPORT.md).
 
 | File | What it is |
 |---|---|
-| [`FINAL_REPORT.md`](FINAL_REPORT.md) | Final report: method, audit fixes, all verified results, limitations, references |
-| `presentation/build_final_presentation.py` | Builds `presentation/final_presentation.pptx` (14 slides, 16:9). It checks every quoted number against `results/` first |
-| `presentation/final_presentation.pptx` | The generated deck, with speaker notes = the narration |
-| [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) | Slide-by-slide narration with timings (about 6.5 minutes) |
+| [`FINAL_REPORT.md`](FINAL_REPORT.md) | Reference report (Markdown): method, audit fixes, all verified results, limitations, references |
+| `report/` | Overleaf-ready LaTeX draft of the 5-page NeurIPS 2026 report, with tables and figures generated from `results/` (see `report/README.md`) |
+| `presentation/build_final_presentation.py` | Builds `presentation/final_presentation.pptx` and `VIDEO_SCRIPT.md`. `--check` verifies every number on the slides and in the narration (112 checks, 166 quoted values) against `results/`, git and the code, and writes nothing |
+| `presentation/final_presentation.pptx` | The final deck (18 slides, 16:9) used for the recorded video; its speaker notes are the narration |
+| [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) | Slide-by-slide narration with timings, identical to the deck's speaker notes |
+| `presentation/PERSON_WISE_SCRIPT.pdf` | The same narration split by speaker (who presents which slides), with hand-offs and a recording checklist |
 | [`FIXES.md`](FIXES.md) | Audit log: what was wrong before 15 Oct, what changed, the 17 Nov study and the 20 Nov extensions |
+| [`requirements.txt`](requirements.txt) | Python packages and the versions used for the study |
 | `results/` | All tables (`*.md`, `*.json`), per-origin forecasts (`losses/*.npz`) and figures (`figures/*.png`) |
 
-The midterm scripts `presentation/make_midterm_slide.py` and `build_verified_midterm_presentation.py` are kept
-for history. Their numbers predate the full study and are superseded by the final deck.
+These files are kept for history only and are **not** the submitted midterm:
+
+* `presentation/midterm_report_slide*.{pptx,png}`: a 17 Nov Fold 1 rebuild, even though they are labelled
+  "October 15, 2026 Submission".
+* `build_verified_midterm_presentation.py`: the script that built them.
+* `make_midterm_slide.py` and `render_slide_image.py`: they hold pre-audit numbers.
+
+All three scripts stop with a message on purpose, and everything here is superseded by the final deck. The
+submitted midterm was a one-slide deck (15 Oct) covering the token audit, the Fold 1 baselines and the GPT
+audit, which was then still running. Its numbers reappear unchanged (up to rounding) in the final results.
+
+---
+
+## Team and contributions
+
+The work is split into five parts of roughly equal size. Each part pairs one area of the study (code and the
+results it produced) with one share of the final deliverables.
+
+| Member | Area of the study (code) | Results produced | Share of the final deliverables |
+|---|---|---|---|
+| **Sanidhya Srivastava** | **Data, folds and econometric baselines:** `data/download_binance.py` (Binance klines, 2025 timestamp fix), `data/preprocess.py` (log returns, trailing EWMA, RV targets), `data/folds.py` (expanding folds, clock-hour origins, purging, holdout spec), `models/baselines.py` (HAR-RV, constrained GARCH MLE), `experiments/run_baselines.py`, `experiments/forecast_store.py` | `results/fold_<k>_baselines.json` | Repository and reproducibility (`README.md`, `requirements.txt`, `FIXES.md`); report section on data and setup |
+| **Arnav Tiku** | **Tokenizer and token-level causality:** `tokenization/bpe_tokenizer.py` (hour-bounded Götz BPE, scale tokens, conditional decoding), `tokenization/causal_gate.py` (RoV × SEI gate), `tokenization/causality_tests.py`, `experiments/run_boundary_experiment.py` | `results/boundary_mismatch_results.json` | Result figures (`presentation/generate_figures.py`, `results/figures/`); report section on the tokenizer and gate |
+| **Devansh Jangid** | **Model, leak arms and main audit:** `models/gpt_model.py` (GPT with direct and generative heads, token healing), `tokenization/leak_tokenizer.py` (every arm and its matched control), `experiments/run_leak_experiments.py` (per-arm training, DM, GW, TOST, Holm) | `results/fold_<k>_h12_leak_audit.json`, `results/fold_1_h288_leak_audit.json` | Final deck and its number check (`presentation/build_final_presentation.py`); report section on the main results |
+| **Karan Malik** | **Controls, holdout and extensions:** `simulation/garch_simulator.py`, `experiments/run_oracle_experiment.py` (negative control), `experiments/run_holdout.py` (score-once lock), `experiments/run_all.py`, `experiments/run_extensions.py`, `experiments/run_cross_asset.py`, `notebooks/run_on_colab.ipynb` | `results/negative_control_results.json`, `results/holdout_h12_leak_audit.json`, `results/HOLDOUT_SCORED.json`, `results/fold_<k>_h12_{dose,heal,xasset}.json` | Video script and recording (`VIDEO_SCRIPT.md`); report section on the controls, the holdout and the extensions |
+| **Aman Gupta** | **Statistics and robust analysis:** `evaluation/metrics.py` (QLIKE), `evaluation/hypothesis_tests.py` (block bootstrap, DM, GW, TOST, Holm), `experiments/aggregate_folds.py`, `experiments/robust_stats.py` (equivalence bounds, random-effects pooling, Model Confidence Set) | `results/inflation_table_h{12,288}.*`, `results/robust_stats_h12.*` | NeurIPS report assembly (`report/`: LaTeX, `make_tables.py`, `make_figures.py`); report sections on statistics, discussion and limitations |
+
+**Shared by all five:** reviewing the results, writing the report section for their own part in their own
+words, and presenting that part in the video.
+
+**Who presents what in the video** (`presentation/final_video.mp4`; script in
+`presentation/PERSON_WISE_SCRIPT.pdf`):
+
+| Order | Presenter | Slides | Topics |
+|---|---|---|---|
+| 1 | Arnav Tiku | 1–4 | Opening, the problem, research question, tokenizer pipeline |
+| 2 | Sanidhya Srivastava | 5–7 | Experiment protocol, data and folds, continuity since the midterm |
+| 3 | Aman Gupta | 8–11 | Token audit, negative control, main result, equivalence bounds |
+| 4 | Karan Malik | 12–15 | Trade-off, next-day horizon, 2025 holdout, extensions |
+| 5 | Devansh Jangid | 16–18 | Code walkthrough, takeaways, team and closing |
+
+All commits were pushed from a single account, so `git log` does not show who wrote what.
 
 ---
 
@@ -166,26 +217,34 @@ evaluation/      metrics.py (QLIKE), hypothesis_tests.py (bootstrap, DM, GW, TOS
 experiments/     run_all.py (whole study, resumable), run_extensions.py, robust_stats.py, run_leak_experiments.py,
                  run_baselines.py, run_boundary_experiment.py, run_oracle_experiment.py, run_cross_asset.py,
                  aggregate_folds.py, forecast_store.py, run_holdout.py
-notebooks/       run_on_colab.ipynb (one-click GPU run of the main study)
+notebooks/       run_on_colab.ipynb (GPU run of the main study; does not cover the extensions)
 presentation/    build_final_presentation.py (final deck), generate_figures.py; midterm scripts kept for history
+report/          LaTeX scaffold for the 5-page NeurIPS 2026 report (Overleaf)
 results/         tables, per-origin forecasts (losses/), figures/
-FINAL_REPORT.md  VIDEO_SCRIPT.md  FIXES.md
+FINAL_REPORT.md  VIDEO_SCRIPT.md  FIXES.md  requirements.txt
 ```
 
 ## Reproduce
 
-**Easiest:** open `notebooks/run_on_colab.ipynb` in Colab with a T4 GPU and choose *Run all*.
+**Results are already committed.** Because every output in `results/` exists, `run_all.py`, `run_extensions.py`
+and the Colab notebook skip all training steps and only rebuild tables and figures. Pass `--force` to retrain.
+Never run the holdout (see below).
 
 **Locally:**
 
 ```bash
-pip install torch numpy pandas scipy matplotlib requests pyarrow python-pptx pillow
+pip install -r requirements.txt                   # for CUDA, see the note at the top of requirements.txt
 python data/download_binance.py 2021 1 2025 12     # caches monthly CSVs in data/raw (~1 min)
 python experiments/run_all.py                      # all folds, seeds, next-day, negative control, tables, figures
 python experiments/run_extensions.py               # dose-response, token healing, cross-asset (ETH), extra seeds
 python experiments/robust_stats.py                 # robust tables from the saved forecasts (no retraining)
-python presentation/build_final_presentation.py    # final deck (checks every quoted number against results/)
+python presentation/build_final_presentation.py --check   # verify every quoted number against results/
+python presentation/build_final_presentation.py    # rebuild the final deck
 ```
+
+**Colab:** `notebooks/run_on_colab.ipynb` runs the main study (`run_all.py`) on a T4 GPU. It does not run the
+extensions (`run_extensions.py`) or `robust_stats.py`. Its holdout cell refuses to score, because
+`results/HOLDOUT_SCORED.json` already exists.
 
 `run_all.py` and `run_extensions.py` skip any step whose output already exists, so they can be re-run after
 an interruption. Each run saves per-origin forecasts to `results/losses/*.npz`, so every table can be
@@ -206,3 +265,10 @@ That has already happened (17 Nov 2026, commit `f4ad204`). **Do not run it again
 
 (The earlier "cryptographically sealed" wording was inaccurate: `data/SEALED_2025_HOLDOUT.txt` is a
 written commitment, not a hash.)
+
+**Code freeze.** `data/SEALED_2025_HOLDOUT.txt` names 14 Nov as the code freeze. In fact the code was frozen at
+`f4ad204` on 17 Nov, after two changes: the 2025 timestamp fix (without it the 2025 dates would be wrong) and
+the constrained GARCH estimator. The holdout was then scored once at that commit. The 20 Nov extension commit
+(`09e386a`) later added arms and options to the experiment code, but the holdout files
+(`HOLDOUT_SCORED.json`, `holdout_h12_leak_audit.json`, `losses/holdout_h12.npz`) have not changed since
+`156090a`.

@@ -1,0 +1,12 @@
+# Python 3.12. Versions are the ones the study ran with.
+# GPU (optional): install the CUDA build of PyTorch first, matching `nvidia-smi`, e.g.
+#   pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+numpy==2.5.4
+pandas==3.0.6
+scipy==1.18.1
+torch==2.6.0
+requests==2.34.2        # data/download_binance.py
+pyarrow==26.0.0         # optional parquet cache in data/folds.py
+matplotlib==3.11.2      # presentation/generate_figures.py
+python-pptx==1.0.2      # presentation/build_final_presentation.py
+pillow==12.3.0          # presentation/build_final_presentation.py

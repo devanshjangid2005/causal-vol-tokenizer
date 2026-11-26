@@ -244,17 +244,27 @@ The trade-off between partial-token bias and boundary leakage is read from two c
 
 ---
 
-## 7. Audit fixes: why the midterm numbers were withdrawn
+## 7. Audit fixes: why the pre-audit numbers were withdrawn
 
-An audit on 15 Oct 2026 found implementation bugs. All of them were fixed before any number in this report
-was produced (`FIXES.md`). The following **midterm figures are withdrawn and must not be cited**:
+An audit on 15 Oct 2026 found implementation bugs in the initial prototype, the first GitHub commits
+(`7f9f6a6`–`dea2cb5`). All of them were fixed before any number in this report, or on our 15 Oct midterm
+slide, was produced (`FIXES.md`). The fixes were committed on 17 Nov (`24d9c8f`). The midterm slide already
+withdrew the first three figures below. **These pre-audit figures must not be cited:**
 
-| Withdrawn midterm claim | Cause | Corrected |
+| Withdrawn pre-audit figure | Cause | Corrected |
 |---|---|---|
 | Channel 4 "+16.6% significant leak" | The Ch4 tokenizer was never fitted (0 merges), so it fed raw bins to a BPE-trained model. That is input-format shift, not leakage. | Unconstrained BPE fitted on train data; a context-only control added |
-| GARCH 21.7% worse than HAR | GARCH was scored against HAR's target array, shifted 1,440 bars | Same target and origins for every model; Fold 1 GARCH 0.4825 < HAR 0.5164 |
+| GARCH −21.7% (QLIKE 0.7770 vs the reference GPT's 0.6383; 43% worse than HAR's 0.5428). The midterm and `FIXES.md` described this as "21.7% worse than HAR". | GARCH was scored against HAR's target array, shifted 1,440 bars | Same target and origins for every model; Fold 1 GARCH 0.4825 < HAR 0.5164 |
 | "84% boundary mismatch" | Measured on raw returns, which occupy only 2 of 32 bins | Measured on EWMA-normalized returns: 0% at hour-aligned origins, 32% straddling for unconstrained BPE |
 | "3.99× compression" | The same raw-return artifact | 1.40 bars/token at 64 merges |
+
+Every other number in the initial commits is superseded too, for example Ch1 +7.09%, positive control +69.24%
+and reference GPT 0.6383. Ch1 is now +63.39% because the experiment changed:
+
+* **Now:** each leak arm trains its own model, with the leak present in both training and testing, and is
+  compared with a context-only window-std control.
+* **Before the audit:** the leak was swapped into one reference-trained model at test time and compared with
+  the reference.
 
 Other fixes made at the same time:
 
@@ -268,10 +278,14 @@ Other fixes made at the same time:
 * The causality tests now compare different inputs and can fail.
 * Origins are clock-hour aligned and robust to exchange outages.
 * The HAR weekly lag is 2,016 bars.
-* GARCH is fitted by stationarity-constrained MLE.
+* GARCH is fitted by stationarity-constrained MLE. This was added on 17 Nov, after `arch` failed to converge
+  on Fold 6.
 
-The Fold-1-only midterm deck (`presentation/build_verified_midterm_presentation.py`) predates Folds 2–6, the
-holdout and the extensions. It is superseded by `presentation/build_final_presentation.py`.
+The submitted midterm was a one-slide deck (15 Oct) covering the token audit, the Fold 1 baselines and the
+GPT audit, which was then still running. Its numbers reappear here unchanged (up to rounding).
+
+`presentation/midterm_report_slide*.pptx` and `build_verified_midterm_presentation.py` are not the submission.
+They are a later 17 Nov Fold 1 rebuild. Both are superseded by `presentation/build_final_presentation.py`.
 
 ---
 
@@ -548,7 +562,8 @@ In the table below, "Seeds" gives arm/control seed counts. All rows come from `r
 * **Cross-asset.** Adding ETH data through the test period adds about 1%, which is not significant after
   Holm correction. Adding ETH data only up to the split improves the direct head by 3.06%. The benefit of a
   correlated asset comes mostly from more training data, not from leaked test-period information. The code
-  notes that ETH and BTC hourly RV correlate at about 0.93 (2021-06 to 2022-03; `experiments/run_cross_asset.py`).
+  notes that ETH and BTC hourly RV correlate at about 0.93 (Pearson correlation of hourly RV levels,
+  2021-06 to 2022-03; `experiments/run_cross_asset.py`). On log-RV the correlation is lower, about 0.85.
 * **Token healing.** Healing improves the generative forecast of the same trained model by 1.70% (90% CI
   +0.07% to +3.38%; RE +1.89% [+0.12, +3.66]). The DM test is not significant after Holm correction
   (p = 0.295). This is consistent with a small partial-token effect at H = 12, on one seed.
@@ -583,6 +598,22 @@ In the table below, "Seeds" gives arm/control seed counts. All rows come from `r
 * The generative head is noisy (I² up to 95% for small channels), so equivalence bounds are wider there.
 * Token healing uses the standard prefix-compatibility heuristic, not the exact correction of Phan et al.
 * Gate thresholds are percentile-based (75th) and were not tuned.
+* **The gate and scale-token ablations planned at the midterm were not run.** No result has the gate or the
+  scale tokens switched off.
+* **H = 288 p-values are likely optimistic.** Origins are hourly but each target spans 24 hours, so
+  consecutive loss differentials overlap 23/24. The DM, GW and TOST tests use a Newey–West lag of about 7,
+  which understates the long-run variance. The block-bootstrap CIs (block length 48 origins) are unaffected.
+* **Partial-token bias is not a single switch.** The context-only unconstrained arm also has no gate and one
+  origin scale token instead of twelve hourly ones, so it differs from the reference in three ways. Token
+  healing on the same trained model (Section 8.9) is the cleaner test.
+* **GARCH's exclusion from the fold-level MCS depends on the extra seeds.** With seed 0 only, the pooled-fold
+  MCS still contains GARCH(1,1) (MCS p = 0.127).
+* **The cross-asset "more data" comparison mixes data and training.** `xa_control` trains for the same 5
+  epochs on twice as many samples (BTC train origins plus as many ETH origins, per `fold_<k>_h12_xasset.json`),
+  so its +3.06% combines more data with more optimisation steps.
+* **The code freeze was 17 Nov, not 14 Nov.** The code was frozen at `f4ad204` on 17 Nov, not on the 14 Nov
+  date in `data/SEALED_2025_HOLDOUT.txt`. The 2025 timestamp fix and the GARCH estimator were added that day,
+  before the holdout was scored.
 
 ## 11. Reproducibility and artifact index
 

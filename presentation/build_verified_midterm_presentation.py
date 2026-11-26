@@ -565,5 +565,9 @@ def render_slide_png(output_paths=("presentation/midterm_report_slide.png", "pre
 
 
 if __name__ == "__main__":
+    # This is a 17 Nov Fold-1-only rebuild, not the midterm actually submitted on 15 Oct (a one-slide deck,
+    # DA4022_Midterm_Progress.pptx). Its outputs are kept for history; the final deck supersedes them.
+    raise SystemExit("Superseded: Fold 1 rebuild of 17 Nov, not the submitted midterm; "
+                     "use presentation/build_final_presentation.py.")
     build_pptx()
     render_slide_png()

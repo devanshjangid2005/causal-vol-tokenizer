@@ -20,7 +20,8 @@ Files: `tokenization/leak_tokenizer.py`.
 ## 2. Targets and origins aligned across every model
 
 **Wrong:** GARCH forecasts were scored against HAR's target array, which started 1,440 bars
-(5 days) later, so GARCH looked 21.7% worse than HAR. The negative control had the same
+(5 days) later, so GARCH looked 21.7% worse than HAR. (Correction, 26 Nov: in the initial README the −21.7% was
+GARCH against the reference GPT, 0.7770 vs 0.6383. Against HAR, 0.5428, GARCH was 43% worse.) The negative control had the same
 bug for HAR. HAR, GARCH and the GPT also used three different target definitions and
 different origin sets, so DM tests between them were invalid. Hours were defined by array
 index, which drifts after Binance outages (there are 6 gaps in Fold 1, up to 4.75 h).
@@ -101,7 +102,7 @@ Files: `tokenization/causality_tests.py`, `experiments/run_boundary_experiment.p
 * The gate was never called.
 * Its SEI measured high-frequency energy share, whereas PATK's SEI is energy around a
   dominant frequency, and it was combined as `rov·(1+sei)` instead of PATK's product.
-* Channel 5 multiplied the scale by (1 + 0.5·FFT energy), which is about ×1.00005 on
+* Channel 5 multiplied the scale by (1 + 0.5·FFT energy), which is a negligible change (practically ×1) on
   5-minute returns.
 * Scale tokens were disabled in every call.
 
@@ -131,7 +132,7 @@ Files: `tokenization/causal_gate.py`, `tokenization/bpe_tokenizer.py`,
 ## Still open (not in this patch)
 
 * Folds start in 2021; the proposal says 2019–2025.
-* Only Fold 1 has been re-run.
+* Only Fold 1 has been re-run. (Resolved on 17 Nov: all six folds were run; see below.)
 * The proposal cites Zhang et al. for "BPE is not incremental", but that paper defines the
   incremental property and never discusses BPE. Phrase it as applying their definition.
 
