@@ -19,7 +19,8 @@
   * the 18-slide deck `presentation/final_presentation.pptx`, used for the recorded video;
   * the video script [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md), plus a per-speaker version,
     `presentation/PERSON_WISE_SCRIPT.pdf`;
-  * the Overleaf-ready LaTeX source of the 5-page NeurIPS 2026 report in `report/` (see `report/README.md`).
+  * the final 5-page report in the NeurIPS 2026 template, [`report/final_report.pdf`](report/final_report.pdf),
+    with its Overleaf-ready LaTeX source in `report/` (see `report/README.md`).
 
 The numbers in the initial 15 Oct commits (`7f9f6a6`–`dea2cb5`) are **withdrawn**. They came from bugs found
 in the 15 Oct audit: Channel 4 +16.6%, GARCH −21.7% against the reference GPT (43% worse than HAR), 84% boundary mismatch, 3.99× compression, and the

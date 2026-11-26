@@ -8,6 +8,7 @@ and citations can stay as they are: they come from `results/` and are checked au
 
 | File | What it is |
 |---|---|
+| `final_report.pdf` | **The submitted report**: `main.tex` compiled on Overleaf, 5 pages including references |
 | `main.tex` | **Strict 5-page version** (the default): abstract, 5 sections, acknowledgements and references fit in 5 pages in total. No appendix. Main-text floats are Fig. 1 (pipeline), Fig. 2 (inflation per channel) and Table 1 (trade-off) |
 | `main_with_appendix.tex` | Longer version: the same main text fits 5 pages, and an appendix follows the references (full robust table, negative-control figure, holdout figure, extensions table). Use it only if the Prof allows appendices. In Overleaf, switch it on with Menu → Main document |
 | `neurips_2026.sty` | The official NeurIPS 2026 style file (unchanged), so the project compiles straight after upload |
