@@ -6,8 +6,8 @@ Paper-width figures for the 5-page report, drawn ONLY from saved results (nothin
 
 Reads   results/robust_stats_h12.json       (3-seed pooled inflation, 90% bootstrap CI, Holm p)
         results/holdout_h12_leak_audit.json  (2025 holdout, seed 0, scored once)
-Writes  report/figures/fig_inflation_folds.{pdf,png}    main-text figure (Folds 1-6, 3 seeds)
-        report/figures/fig_inflation_holdout.{pdf,png}  optional / appendix (2025 holdout, seed 0)
+Writes  report/figures/fig_inflation_folds.{pdf,png}    Figure 2 of the report (Folds 1-6, 3 seeds)
+(Figure 1, pipeline_leak_switches.png, is copied from results/figures/.)
 
 Sized for the NeurIPS text width (5.5 in) so text prints at >= 8 pt with width=\\linewidth.
 PDF keeps TrueType fonts embedded (pdf.fonttype 42), as the template requires.
@@ -182,11 +182,8 @@ def negative_control():
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    negative_control()
     figure(folds_data(), "fig_inflation_folds", (0, 120), (-6, 6),
            "Inflation vs matched control (%), 90% block-bootstrap CI", "Holm p < 0.05", band=5)
-    figure(holdout_data(), "fig_inflation_holdout", (0, 120), (-25, 20),
-           "Inflation vs matched control (%), 2025 holdout, seed 0", "p < 0.05")
 
 
 if __name__ == "__main__":

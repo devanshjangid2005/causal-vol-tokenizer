@@ -1,94 +1,75 @@
-# Final report: NeurIPS 2026 template (Overleaf)
+# Final report
 
-**This text is a DRAFT.** The DA4022 brief requires a *human-written* report. Every team member must
-rewrite the prose of `main.tex` in their own words before submission. The numbers, tables, figures
-and citations can stay as they are: they come from `results/` and are checked automatically.
+**Quantifying Look-Ahead Bias via Causal, Volatility-Aware Motif Tokenization in Financial Time Series**
 
-## Files
+Devansh Jangid · Aman Gupta · Arnav Tiku · Sanidhya Srivastava · Karan Malik
+DA4022 Course Project · NeurIPS 2026 template · 5 pages
+
+📄 **[Read the report (PDF)](final_report.pdf)**
+
+---
+
+## In one paragraph
+
+Motif tokenizers turn a price series into tokens, much as BPE does for text. When one is used to
+forecast a single market through time, it can quietly use information from the future. We built a
+forecasting pipeline for 5-minute Bitcoin volatility that only looks backwards, then switched on one
+possible leak at a time against a matched control. One leak dominates: a normalization window that
+sees the forecast period makes forecasts look 63.39% better. The other four leaks are small one hour
+ahead but grow one day ahead, where one leak can hide the cost of another.
+
+## Key results
+
+| Finding | Number | Scope |
+|---|---|---|
+| Normalization window sees the forecast period (Ch1) | **+63.39%** lower forecast error (QLIKE); 62.03% pooled across periods | 6 test periods, 3 training runs |
+| Every other leak, one hour ahead | at most **+2.84%** (90% upper bound) | 6 test periods, 3 training runs |
+| Only Ch1 beats the best possible score on simulated data | **0.0694** vs the floor of **0.1268** | Simulated GARCH data |
+| One day ahead, the leaks grow | Ch1 +96.36%, Ch4 +16.10%, Ch5 +7.02%, Ch2 +5.67% | First test period, 1 run |
+| A boundary leak can hide partial-token bias | −19.53% cost, +16.10% won back (0.3137 vs 0.3128) | First test period, 1 run |
+| 2025 test set, run only once | Ch1 still **+73.90%**; only GARCH stays in the confidence set | 2025, 1 run |
+
+<p align="center">
+  <img src="figures/fig_inflation_folds.png" width="760" alt="Look-ahead inflation by channel, one hour ahead">
+  <br>
+  <em>How much each leak inflates accuracy one hour ahead (Figure 2 of the report).</em>
+</p>
+
+## What is in this folder
 
 | File | What it is |
 |---|---|
-| `final_report.pdf` | **The submitted report**: `main.tex` compiled on Overleaf, 5 pages including references |
-| `main.tex` | **Strict 5-page version** (the default): abstract, 5 sections, acknowledgements and references fit in 5 pages in total. No appendix. Main-text floats are Fig. 1 (pipeline), Fig. 2 (inflation per channel) and Table 1 (trade-off) |
-| `main_with_appendix.tex` | Longer version: the same main text fits 5 pages, and an appendix follows the references (full robust table, negative-control figure, holdout figure, extensions table). Use it only if the Prof allows appendices. In Overleaf, switch it on with Menu → Main document |
-| `neurips_2026.sty` | The official NeurIPS 2026 style file (unchanged), so the project compiles straight after upload |
-| `refs.bib` | 13 references (from `FINAL_REPORT.md`, section "References") |
-| `tables/tab_tradeoff.tex` | Main-text Table 1: boundary leakage vs partial-token bias |
-| `tables/tab_robust.tex` | Appendix: full 3-seed robust statistics |
-| `tables/tab_extensions.tex` | Appendix: exploratory extensions |
-| `figures/pipeline_leak_switches.png` | Fig. 1, copied from `results/figures/` |
-| `figures/fig_negative_control.pdf` | Fig. 2, negative control |
-| `figures/fig_inflation_folds.pdf` | Fig. 3, inflation per channel, Folds 1–6 |
-| `figures/fig_inflation_holdout.pdf` | Appendix figure, 2025 holdout |
-| `make_tables.py`, `make_figures.py` | Regenerate the tables and figures from `results/` |
+| [`final_report.pdf`](final_report.pdf) | **The final report**: 5 pages including references |
+| `main.tex` | Its LaTeX source |
+| `refs.bib` | The 13 references |
+| `neurips_2026.sty` | The official NeurIPS 2026 style file, unchanged |
+| `figures/` | Figure 1 (pipeline) and Figure 2 (inflation per leak) |
+| `tables/` | Table 1 (boundary leak vs partial-token bias) |
+| `make_figures.py`, `make_tables.py` | Scripts that rebuild Figure 2 and Table 1 from `../results/` and check the quoted numbers |
 
-## Upload to Overleaf
+Every number, table and figure comes from the saved results in [`../results/`](../results). No
+experiment was re-run for the report, and the 2025 test set was scored only once.
 
-1. Open the official template ("Formatting Instructions For NeurIPS 2026", by the NeurIPS 2026 Program Chairs) and choose **Open as Template**.
-2. Keep the template's `neurips_2026.sty`, and its `checklist.tex` if you want the checklist.
-3. Upload `main.tex`, `refs.bib`, `tables/` and `figures/`. You can upload `report_overleaf.zip` from the repo root and unzip it there.
-4. Set `main.tex` as the main document. The default pdfLaTeX compiler works; BibTeX runs automatically.
-5. Delete the template's own example `.tex` file, or just ignore it.
+## Rebuild the PDF
 
-The document uses `\usepackage[preprint]{neurips_2026}`, which shows the author names with the footer "Preprint. Work in progress." The default option is the anonymous review version, and `final` is only for papers NeurIPS has accepted.
+1. On [Overleaf](https://www.overleaf.com), choose **New Project → Upload Project** and upload this
+   folder as a zip. It already contains `neurips_2026.sty`.
+2. Check that **Menu → Main document** is `main.tex` and the compiler is pdfLaTeX.
+3. Click **Recompile**. BibTeX runs automatically.
 
-## Page budget (5 pages of main content)
+To rebuild the figures and tables from the results first, run from the repository root:
 
-References, acknowledgements and the appendix fall outside the 5 pages under NeurIPS rules. **Ask the instructor whether the course counts them the same way.**
-
-| Section | Target | Draft words |
-|---|---|---|
-| Abstract | 0.25 page | 190 |
-| 1 Introduction | 0.5 page | 319 |
-| 2 Method (with Fig. 1) | 0.9 page | 525 |
-| 3 Experimental setup and statistics | 0.5 page | 399 |
-| 4 Results (with Figs. 2–3 and Table 1) | 2.0 pages | 790 |
-| 5 Discussion and limitations | 0.6 page | 252 |
-| **Total** | **~4.75** | **~2,475** (+180 in captions) |
-
-**Float heights at full width (5.5 in):**
-
-| Float | Height |
-|---|---|
-| Fig. 1 (pipeline) | 2.24 in |
-| Fig. 2 (negative control) | 2.1 in |
-| Fig. 3 (fold inflation) | 2.6 in |
-| Table 1 (trade-off) | about 0.85 in |
-
-**Estimated length:** 4.9–5.1 pages, depending on words per line (14–15 at 10 pt Times). It could not be compiled here, because there is no TeX on this machine.
-
-**If Overleaf shows more than 5 pages**, in this order:
-1. Move Fig. 2 to the appendix, keeping its numbers in the text (saves about 0.3 page).
-2. Shorten the "Relation to the midterm" paragraph to one sentence.
-3. Tighten the extension paragraph.
-
-## What must stay when you rewrite
-
-**Numbers.** Keep every number exactly as written, with its scope:
-- 3 seeds on Folds 1–6;
-- seed 0 for the next-day (H=288, Fold 1) results and the 2025 holdout;
-- folds only for the extensions.
-
-**Mandatory caveats.** The draft already states each of these; keep them all:
-1. **The H=288 p-values are anti-conservative.** Hourly origins with 24-hour targets overlap, but the Newey–West lag is about 7.
-2. **The partial-token-bias comparison is not a single switch.** It also drops the gate and uses one scale token instead of twelve.
-3. **GARCH's exclusion from the fold-level Model Confidence Set depends on seeds 1–2.** With seed 0 alone, GARCH stays in (p = 0.127).
-4. **The cross-asset "more data" gain also includes about twice the optimizer steps.**
-5. **The gate and scale-token ablations planned at the midterm were not run.**
-6. **The code freeze was `f4ad204` on 17 Nov**, not the planned 14 Nov.
-7. **Midterm continuity:**
-   - the pre-audit numbers came from the 15 Oct initial commits;
-   - the midterm had already withdrawn the headline figures;
-   - Ch1 rose from +7.09% to about +63% because each arm now trains its own model against a matched control.
-8. **The GPT is not claimed to be the better forecaster.** In 2025 only GARCH remains in the Model Confidence Set.
-
-**Author order.** The order is set once, in `\author{...}`. The midterm slide listed Sanidhya Srivastava, Arnav Tiku, Devansh Jangid, Karan Malik, Aman Gupta; the draft uses the order of the final repository. Agree on one order.
-
-**Acknowledgements.** Add a funding or competing-interest statement in the `ack` block if the instructor wants one.
-
-## Regenerate tables and figures (no experiment is re-run)
-
+```bash
+python report/make_tables.py    # checks every value against results/ and stops on any mismatch
+python report/make_figures.py   # draws the figures from results/*.json
 ```
-python report/make_tables.py    # checks every cell against results/*.md and the JSONs; stops on any mismatch
-python report/make_figures.py   # draws from results/*.json only; PDF with embedded TrueType fonts
-```
+
+## Limitations stated in the report
+
+- One asset, with data from 2021, and a small model trained for five epochs.
+- The next-day, 2025, dose-response and token-healing results each come from a single training run.
+- The next-day p-values are likely too small, because neighbouring 24-hour targets overlap.
+- The partial-token comparison also removes the gate and most volatility tokens.
+- The gate and volatility-token ablations planned at the midterm were not run.
+
+See the [main README](../README.md) for the code, the team's contributions and the video.
