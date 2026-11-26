@@ -1,6 +1,6 @@
 # Quantifying Look-Ahead Bias via Causal, Volatility-Aware Motif Tokenization in Financial Time Series
 
-> **DA4022 Course Project · Team of 5**
+> **DA4022 Course Project · Devansh Jangid, Aman Gupta, Arnav Tiku, Sanidhya Srivastava, Karan Malik**
 > A harness that switches on one look-ahead leakage channel at a time inside a BPE
 > motif tokenizer and measures how much each one inflates walk-forward realized
 > volatility forecasts.

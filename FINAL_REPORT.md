@@ -1,6 +1,6 @@
 # Quantifying Look-Ahead Bias via Causal, Volatility-Aware Motif Tokenization in Financial Time Series
 
-**DA4022 Course Project · Team of 5 · Final report (26 Nov 2026)**
+**DA4022 Course Project · Devansh Jangid, Aman Gupta, Arnav Tiku, Sanidhya Srivastava, Karan Malik · Final report (26 Nov 2026)**
 Code: `https://github.com/devanshjangid2005/causal-vol-tokenizer` (results in this report: branch `feat/extensions`, commit `273507c`).
 
 ---
@@ -81,7 +81,7 @@ volatility forecasting, and by how much does each one inflate measured accuracy?
 * **PATK (Liao et al., AAAI-26).** We borrow only the **RoV × SEI mechanism** (rate of variation times
   spectral energy intensity around a dominant frequency) as a score for when to shorten tokens. We do not
   use PATK's benchmark results as evidence for anything in this report.
-* **Cross-asset leakage (Meyer et al., 2025/26).** A model trained on a different but correlated series that
+* **Cross-asset leakage (Meyer et al., 2025).** A model trained on a different but correlated series that
   covers the test period can benefit from it even if no test observation of the target series was seen.
 
 ---
@@ -613,14 +613,11 @@ In the table below, "Seeds" gives arm/control seed counts. All rows come from `r
 * DerSimonian, R., & Laird, N. (1986). Meta-analysis in clinical trials. *Controlled Clinical Trials*, 7(3), 177–188.
 * Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics*, 13(3), 253–263.
 * Giacomini, R., & White, H. (2006). Tests of conditional predictive ability. *Econometrica*, 74(6), 1545–1578.
-* Götz et al. (2026). Byte-pair-encoding motif tokenization for time series (PDF in the repository root: `9949_Byte_Pair_Encoding_for_Ef.pdf`).
+* Götz, L., Kollovieh, M., Günnemann, S., & Schwinn, L. (2026). Byte pair encoding for efficient time series forecasting. In *Proceedings of the 43rd International Conference on Machine Learning (ICML)*, Seoul, South Korea, PMLR 306 (`9949_Byte_Pair_Encoding_for_Ef.pdf`).
 * Hansen, P. R., Lunde, A., & Nason, J. M. (2011). The model confidence set. *Econometrica*, 79(2), 453–497.
 * Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics*, 6(2), 65–70.
-* Liao et al. (2026). PATK, AAAI-26 (PDF in the repository root: `21385-AAAI26.LiaoH-ML.pdf`). Only the RoV × SEI mechanism is used here.
-* Meyer et al. (2025/26). Rethinking evaluation in the era of time series foundation models: (un)known information leakage challenges.
+* Liao, H., Yang, Z., Xia, J., Sun, Y., Zhang, Y., Li, S., & Liu, Y. (2026). Dynamic semantic tokenization for time series via elastic sampling on physics-aware perception. In *Proceedings of the AAAI Conference on Artificial Intelligence (AAAI-26)* (`21385-AAAI26.LiaoH-ML.pdf`). Only the RoV × SEI mechanism is used here.
+* Meyer, M., Kaltenpoth, S., Zalipski, K., & Müller, O. (2025). Rethinking evaluation in the era of time series foundation models: (Un)known information leakage challenges. *arXiv:2510.13654*.
 * Patton, A. J. (2011). Volatility forecast comparison using imperfect volatility proxies. *Journal of Econometrics*, 160(1), 246–256.
-* Phan et al. (2024). Partial-token bias and token healing in language models.
-* Zhang et al. (2026). UniTok (PDF in the repository root: `2606.09861v1.pdf`). Cited for its definition of incremental tokenization, which we apply to BPE.
-
-*Before submission, complete the full titles and venues of the 2024–2026 tokenizer references from the PDFs in
-the repository root. They are abbreviated here to the details recorded in the code.*
+* Phan, B., Havasi, M., Muckley, M., & Ullrich, K. (2024). Understanding and mitigating tokenization bias in language models. *ICML 2024 Workshop on Theoretical Foundations of Foundation Models*; *arXiv:2406.16829*.
+* Zhang, Y., Qi, R., Zheng, J., Zhang, J., Pan, L., & Yan, J. (2026). Time series as language: A universal tokenizer for general-purpose time series foundation models. *arXiv:2606.09861* (`2606.09861v1.pdf`). Cited for its definition of incremental tokenization, which we apply to BPE.

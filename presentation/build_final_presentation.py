@@ -41,7 +41,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, "results")
 FIG = os.path.join(RES, "figures")
 
-TEAM_LINE = "DA4022 Course Project  ·  Team of 5"
+TEAM_LINE = "DA4022 Course Project  ·  Devansh Jangid, Aman Gupta, Arnav Tiku, Sanidhya Srivastava, Karan Malik"
 DATE_LINE = "Final presentation  ·  November 2026"
 
 # ----------------------------------------------------------------------------- palette
@@ -387,7 +387,7 @@ def build(N, out_path):
     _text(s, Inches(1.1), Inches(3.75), Inches(11.4), Inches(0.6),
           ["A per-channel leakage audit of BPE motif tokenizers for walk-forward volatility forecasting"],
           size=18, color=RGBColor(0xCB, 0xD5, 0xE1))
-    _text(s, Inches(1.1), Inches(5.3), Inches(11.4), Inches(0.9), [TEAM_LINE, DATE_LINE], size=16,
+    _text(s, Inches(1.1), Inches(5.2), Inches(11.4), Inches(1.2), [TEAM_LINE, DATE_LINE], size=16,
           color=RGBColor(0xCB, 0xD5, 0xE1), spacing=4)
     s.notes_slide.notes_text_frame.text = NOTES[1]
 
