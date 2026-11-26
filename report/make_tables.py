@@ -163,7 +163,7 @@ def table2() -> str:
             (r"2025 holdout, seed 0, generative", tradeoff_row(hold["heads"]["generative"]))]
 
     # cross-checks: H=288 against its markdown table; holdout against the values quoted in
-    # FINAL_REPORT.md section 8.5 (which were checked against this same JSON)
+    # TECHNICAL_NOTES.md section 8.5 (which were checked against this same JSON)
     md = (RES / "inflation_table_h288.md").read_text(encoding="utf-8")
     r = rows[0][1]
     for s in (f"| GPT: Causal reference (leak-free) | {r['ref']:.4f} |",

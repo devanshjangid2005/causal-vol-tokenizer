@@ -14,7 +14,7 @@
 * The exploratory extensions use Folds 1–6 only: Ch1 dose-response, cross-asset ETH leakage, token healing,
   and robust statistics.
 * Deliverables:
-  * the reference report [`FINAL_REPORT.md`](FINAL_REPORT.md);
+  * detailed technical notes, [`TECHNICAL_NOTES.md`](TECHNICAL_NOTES.md): a longer companion to the report;
   * the recorded video `presentation/final_video.mp4` (about 10 minutes);
   * the 18-slide deck `presentation/final_presentation.pptx`, used for the recorded video;
   * the video script [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md), plus a per-speaker version,
@@ -75,7 +75,7 @@ origins, H = 12) from [`results/robust_stats_h12.md`](results/robust_stats_h12.m
   +0.95%, not significant after Holm correction (p = 0.188).
 * Token healing vs plain decoding, same model: +1.70% (90% CI +0.07% to +3.38%; Holm p = 0.295).
 
-Full tables, figures and discussion are in [`FINAL_REPORT.md`](FINAL_REPORT.md).
+The submitted report is [`report/final_report.pdf`](report/final_report.pdf). Full tables and discussion are in [`TECHNICAL_NOTES.md`](TECHNICAL_NOTES.md).
 
 > Two tables are kept apart on purpose:
 > * [`results/inflation_table_h12.md`](results/inflation_table_h12.md) pools **seed 0** only (reference direct
@@ -90,7 +90,7 @@ Full tables, figures and discussion are in [`FINAL_REPORT.md`](FINAL_REPORT.md).
 
 | File | What it is |
 |---|---|
-| [`FINAL_REPORT.md`](FINAL_REPORT.md) | Reference report (Markdown): method, audit fixes, all verified results, limitations, references |
+| [`TECHNICAL_NOTES.md`](TECHNICAL_NOTES.md) | Detailed technical notes (Markdown), a longer companion to the 5-page report: method, audit fixes, all verified results, limitations, references |
 | `report/` | Overleaf-ready LaTeX draft of the 5-page NeurIPS 2026 report, with tables and figures generated from `results/` (see `report/README.md`) |
 | `presentation/build_final_presentation.py` | Builds `presentation/final_presentation.pptx` and `VIDEO_SCRIPT.md`. `--check` verifies every number on the slides and in the narration (112 checks, 166 quoted values) against `results/`, git and the code, and writes nothing |
 | `presentation/final_presentation.pptx` | The final deck (18 slides, 16:9) used for the recorded video; its speaker notes are the narration |
@@ -222,7 +222,7 @@ notebooks/       run_on_colab.ipynb (GPU run of the main study; does not cover t
 presentation/    build_final_presentation.py (final deck), generate_figures.py; midterm scripts kept for history
 report/          LaTeX scaffold for the 5-page NeurIPS 2026 report (Overleaf)
 results/         tables, per-origin forecasts (losses/), figures/
-FINAL_REPORT.md  VIDEO_SCRIPT.md  FIXES.md  requirements.txt
+TECHNICAL_NOTES.md  VIDEO_SCRIPT.md  FIXES.md  requirements.txt
 ```
 
 ## Reproduce

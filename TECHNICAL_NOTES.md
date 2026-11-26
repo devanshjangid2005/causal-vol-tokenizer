@@ -1,6 +1,9 @@
 # Quantifying Look-Ahead Bias via Causal, Volatility-Aware Motif Tokenization in Financial Time Series
 
-**DA4022 Course Project · Devansh Jangid, Aman Gupta, Arnav Tiku, Sanidhya Srivastava, Karan Malik · Final report (26 Nov 2026)**
+**DA4022 Course Project · Devansh Jangid, Aman Gupta, Arnav Tiku, Sanidhya Srivastava, Karan Malik · Technical notes (26 Nov 2026)**
+
+> These are the detailed technical notes. The submitted 5-page report is [`report/final_report.pdf`](report/final_report.pdf).
+
 Code: `https://github.com/devanshjangid2005/causal-vol-tokenizer` (results in this report: branch `feat/extensions`, commit `273507c`).
 
 ---
